@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Card Pre-Grader</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <h1>Card Pre-Grader</h1>
+    <p class="tagline">indicative, not definitive</p>
+  </header>
+
+  <main>
+    <!-- CAPTURE -->
+    <section id="capture-view" class="view">
+      <div class="protocol-hint">
+        <strong>Capture protocol:</strong> dark matte background &middot; phone on a tripod, directly
+        overhead &middot; diffuse light from two sides for the flat shots &middot; raking (angled) light
+        for the surface shots.
+      </div>
+
+      <div class="mode-row">
+        <button id="surface-toggle" type="button" class="text-toggle">+ surface analysis (optional)</button>
+        <button id="picker-mode-toggle" type="button" class="text-toggle">Use photo picker instead</button>
+      </div>
+
+      <div id="camera-unavailable-banner" class="banner banner-warn" hidden></div>
+
+      <!-- CAMERA MODE (primary) -->
+      <div id="camera-mode">
+        <div class="viewfinder-wrap">
+          <video id="camera-video" autoplay playsinline muted></video>
+          <div id="card-guide" class="card-guide"></div>
+          <div id="precheck-banner" class="precheck-banner" hidden></div>
+        </div>
+        <canvas id="precheck-canvas" hidden></canvas>
+        <p class="step-indicator" id="step-indicator">Starting camera…</p>
+        <button id="shutter-btn" type="button" class="primary-btn">Shoot</button>
+        <div id="camera-error" class="banner banner-error" hidden></div>
+        <div class="thumb-strip" id="thumb-strip"></div>
+      </div>
+
+      <!-- PICKER MODE (fallback) -->
+      <div id="picker-mode" hidden>
+        <div class="slots" id="required-slots">
+          <div class="slot" data-slot="front">
+            <label class="slot-label">Front</label>
+            <div class="slot-body">
+              <img class="thumb" hidden alt="front preview">
+              <input type="file" accept="image/*" capture="environment">
+              <div class="slot-placeholder">Tap to shoot</div>
+            </div>
+            <div class="slot-error" hidden></div>
+          </div>
+          <div class="slot" data-slot="back">
+            <label class="slot-label">Back</label>
+            <div class="slot-body">
+              <img class="thumb" hidden alt="back preview">
+              <input type="file" accept="image/*" capture="environment">
+              <div class="slot-placeholder">Tap to shoot</div>
+            </div>
+            <div class="slot-error" hidden></div>
+          </div>
+        </div>
+
+        <div class="slots" id="surface-slots" hidden>
+          <div class="slot" data-slot="front_angled">
+            <label class="slot-label">Front (angled)</label>
+            <div class="slot-body">
+              <img class="thumb" hidden alt="front angled preview">
+              <input type="file" accept="image/*" capture="environment">
+              <div class="slot-placeholder">Tap to shoot</div>
+            </div>
+            <div class="slot-error" hidden></div>
+          </div>
+          <div class="slot" data-slot="back_angled">
+            <label class="slot-label">Back (angled)</label>
+            <div class="slot-body">
+              <img class="thumb" hidden alt="back angled preview">
+              <input type="file" accept="image/*" capture="environment">
+              <div class="slot-placeholder">Tap to shoot</div>
+            </div>
+            <div class="slot-error" hidden></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="submit-error" class="banner banner-error" hidden></div>
+      <button id="submit-btn" type="button" class="primary-btn" disabled>Grade card</button>
+    </section>
+
+    <!-- PROCESSING -->
+    <section id="processing-view" class="view" hidden>
+      <div class="spinner"></div>
+      <p id="processing-message">Starting…</p>
+    </section>
+
+    <!-- REPORT -->
+    <section id="report-view" class="view" hidden>
+      <div id="report-content"></div>
+      <div class="report-actions">
+        <button id="download-btn" class="secondary-btn">Download report</button>
+        <button id="reset-btn" class="primary-btn">Grade another card</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

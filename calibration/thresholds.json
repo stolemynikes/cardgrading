@@ -1,0 +1,74 @@
+{
+  "capture": {
+    "canonical_width_px": 1500,
+    "canonical_height_px": 2100,
+    "card_aspect_ratio": [63, 88],
+    "aspect_ratio_tolerance_pct": 3.0,
+    "max_corner_angle_deviation_deg": 2.0,
+    "min_input_shortest_side_px": 1200,
+    "glare": {
+      "blown_out_pixel_value": 250,
+      "max_blown_out_cluster_area_px": 400,
+      "max_blown_out_area_pct": 0.5
+    },
+    "uneven_lighting": {
+      "grid_size": 8,
+      "ring_fraction": 0.05,
+      "max_brightness_gradient": 40
+    }
+  },
+  "centering": {
+    "front_tolerances": [
+      {"grade": 10, "max_ratio": 55},
+      {"grade": 9, "max_ratio": 60},
+      {"grade": 8, "max_ratio": 65},
+      {"grade": 7, "max_ratio": 70},
+      {"grade": 6, "max_ratio": 75},
+      {"grade": 5, "max_ratio": 80},
+      {"grade": 4, "max_ratio": 85},
+      {"grade": 3, "max_ratio": 90}
+    ],
+    "back_tolerances": [
+      {"grade": 10, "max_ratio": 75},
+      {"grade": 9, "max_ratio": 80},
+      {"grade": 8, "max_ratio": 85},
+      {"grade": 7, "max_ratio": 90}
+    ],
+    "border_detect": {
+      "canny_low": 40,
+      "canny_high": 120,
+      "search_margin_pct": 12
+    }
+  },
+  "corners_edges": {
+    "corner_crop_px": 150,
+    "edge_strip_px": 80,
+    "border_margin_frac": 0.85,
+    "min_region_px": 15,
+    "physical_edge_margin_px": 3,
+    "clahe_clip_limit": 3.0,
+    "clahe_tile_grid": 8,
+    "adaptive_block_size": 25,
+    "adaptive_c": 8,
+    "min_blob_area_px": 4,
+    "grade_bands": [
+      {"grade": 10, "max_whitening_pct": 0.2},
+      {"grade": 9, "max_whitening_pct": 0.8},
+      {"grade": 8, "max_whitening_pct": 1.8},
+      {"grade": 7, "max_whitening_pct": 3.0},
+      {"grade": 6, "max_whitening_pct": 5.0},
+      {"grade": 5, "max_whitening_pct": 8.0}
+    ]
+  },
+  "surface": {
+    "laplacian_ksize": 3,
+    "dog_sigma1": 1.0,
+    "dog_sigma2": 2.0,
+    "defect_score_threshold": 15,
+    "min_defect_blob_area_px": 10,
+    "holo_saturation_variance_threshold": 300,
+    "holo_local_variance_threshold": 400,
+    "holo_mask_dilate_px": 7,
+    "physical_edge_margin_px": 3
+  }
+}
