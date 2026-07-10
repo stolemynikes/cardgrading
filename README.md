@@ -32,20 +32,37 @@ matching a card's real 63:88mm aspect ratio) so that all downstream measurements
 in a consistent coordinate system regardless of how the original photo was framed.
 
 ### Stage 1 — Detect & normalize (`pipeline/detect.py`)
-Finds the card's contour against the dark matte background and perspective-corrects
-it to the canonical size. Runs a set of capture-quality gates and rejects the photo
-(asks for a retake) if any fail:
-- **Resolution** — image too small/cropped
-- **Tilt** — camera too far off-perpendicular (corner angles deviate too far from 90°)
-- **Aspect ratio** — sanity-checks the corrected image against the real 63:88 card ratio
+Finds the card's contour against the background and perspective-corrects it to the
+canonical size. Runs a set of capture-quality gates, split into two severities:
+
+**Hard gates** (geometry is wrong — grading would be meaningless, so it blocks and
+asks for a retake):
+- **Card detection** — no card-like contour found at all
+- **Tilt** — the detected quad's corner angles deviate too far from 90°
+- **Aspect ratio** — the detected quad's side-length ratio is too far from the real
+  63:88 card ratio (measured on the *pre-warp* corner quad — the warped image is
+  always canonical-sized, so measuring it would make this gate a constant)
+
+**Soft gates** (image quality is degraded — grading proceeds, and the report shows a
+"grading might be worse because of" warning):
+- **Resolution** — image below the minimum short side
 - **Glare** — blown-out highlight clusters on the card face
 - **Uneven lighting** — brightness gradient across the card's *border ring specifically*
   (not the whole face — printed color contrast between the border and inner panel
   would otherwise look identical to a lighting problem)
 
+Tilt and aspect are complementary: a skewed misdetection fails tilt, while a
+wrong-but-rectangular one (the minimum-area-rect fallback boxing card + background
+together, whose corners are exactly 90° by construction) fails aspect.
+
 Card detection thresholds on **color distance from the sampled background**, not
 absolute brightness — a plain brightness split would fail on dark Pokémon card backs,
-which are often *darker* than a "dark matte" background, not brighter.
+which are often *darker* than a "dark matte" background, not brighter. It binarizes
+at several thresholds (Otsu and multiples of it), collects candidate quads from every
+sizeable contour, and picks the most card-like by aspect ratio, rectangularity,
+solidity, and size — on busy/textured backgrounds a single Otsu split tends to merge
+the card and background into one blob, which the old "largest contour wins" rule
+would then grade as if it were the card.
 
 There's a second, lighter entry point, `align_for_surface()`, used only for the angled
 raking-light surface shot — it skips the tilt/glare/uneven-lighting gates, since that
@@ -169,6 +186,40 @@ existing config alone. Every stage's per-card debug output (aligned images, over
 defect maps) gets written under `output/calibration/<card-name>/` so you can look at
 exactly why a prediction was off.
 
+## Webapp (`webapp/`)
+
+A FastAPI + vanilla-JS app that wraps the pipeline so the whole flow — photograph,
+grade, retake — happens on a phone:
+
+```bash
+.venv/bin/python -m uvicorn webapp.main:app --host 127.0.0.1 --port 8000
+# then for phone access (getUserMedia needs HTTPS):
+cloudflared tunnel --url http://localhost:8000
+```
+
+- **Guided live-camera capture**: a card-shaped guide box, step sequence
+  (front → back → optional angled surface shots), 4K camera request, and a
+  photo-picker fallback when no camera is available.
+- **Live pre-checks** on the viewfinder (coarse, client-side, never block the
+  shutter): too dark, no card detected (red), too little color, glare, too far
+  away (yellow); green guide border when the frame looks good. Readings are
+  debounced over several ticks so borderline scenes don't flicker.
+- **Hard vs soft gate handling**: geometry failures bounce back to the failing
+  step with a retake message; quality failures grade anyway with a red
+  "grading might be worse because of" banner at the top of the report.
+- **No accounts, no persistence**: uploads live in a per-job temp dir deleted in
+  a `finally`; stale temp dirs are swept on startup. The vision judgment (Stage
+  4.5) is optional — the app works fully without API credentials.
+- Server binds to localhost only; remote access is via Tailscale or a Cloudflare
+  tunnel, never `0.0.0.0`.
+
+## Tests
+
+```bash
+.venv/bin/python -m pytest tests/          # pipeline: gates, scoring, detection
+cd webapp/tests && npm install && npm test # frontend: jsdom regression suite
+```
+
 ## Project structure
 
 ```
@@ -181,19 +232,25 @@ pipeline/
   scoring.py                 Stage 5 — grade assembly (heuristic or fitted weights)
 llm/
   vision.py                  Stage 4.5 — Claude vision call for surface judgment
+webapp/
+  main.py                    FastAPI app (upload validation, job endpoints)
+  jobs.py                    In-memory job queue, temp-dir lifecycle, progress messages
+  static/                    Single-page frontend (no build step)
+  tests/                     jsdom regression suite for the frontend
 calibration/
   thresholds.json             All tunable values — nothing is hardcoded in the pipeline modules
   calibrate.py                Batch calibration harness (measure + --fit)
-output/                       Reports and debug images land here (gitignored-style scratch dir)
+tests/                        pytest suite for the pipeline
+output/                       Reports and debug images land here (gitignored)
 ```
 
 ## What's not proven yet
 
-- **Nothing has been run against a real phone photo of a real card.** Every test so
-  far used synthetically generated images. Real cards will have real-world lighting
-  variance, sensor noise, actual print details, and actual physical wear that synthetic
-  test images can't replicate.
-- **All threshold values are guesses** — whitening grade bands, centering tolerances,
+- **Real-photo experience is thin.** The pipeline has been exercised against real
+  phone photos of real cards (which drove the candidate-scored detection and the
+  hard/soft gate split), but only a handful, all on an unhelpfully busy background.
+  No card with a known professional grade has been run end-to-end yet.
+- **Most threshold values are guesses** — whitening grade bands, centering tolerances,
   CLAHE/adaptive-threshold parameters, holo detection thresholds. They came from
   reasoning about the problem, not from measuring real cards. `calibrate.py` exists to
   fix this once real known-grade cards are run through it.
@@ -218,5 +275,15 @@ output/                       Reports and debug images land here (gitignored-sty
   at `tagd.co/CERT#`) as a larger calibration dataset than manually grading your own
   cards — needs a scale-conversion (TAG's 1000-point score → this tool's 1-10) and a
   read of TAG's terms before doing any bulk collection.
-- A local web upload flow (phone → browser → this tool) if the AirDrop-and-run-the-CLI
-  workflow gets tedious.
+- **A blur pre-check / gate.** Motion blur silently degrades corner and surface
+  analysis, and nothing currently warns about it. A cheap Laplacian-based metric was
+  prototyped but didn't discriminate on available data: smooth-but-sharp card art
+  scored *lower* than blurry-but-textured scenes, and there were no matched
+  sharp/blurry captures from the actual phone camera to calibrate against. Needs a
+  small set of deliberate sharp-vs-shaky captures of the same card before it can
+  ship — a mis-calibrated warning is worse than none.
+- **A duplicate-side check** — warn when the front and back captures look like the
+  same photo (easy user slip in the step flow).
+- **`ImageCapture.takePhoto()`** would give full-sensor stills instead of video-stream
+  frames, but it isn't supported on iOS Safari, which is the primary test device —
+  the 4K stream request is the practical ceiling there for now.
