@@ -1,0 +1,11 @@
+{
+  "name": "cardgrading-webapp-tests",
+  "private": true,
+  "description": "jsdom regression suite for webapp/static/app.js — run with `npm test` (after `npm install`)",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
