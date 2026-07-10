@@ -95,42 +95,91 @@ def _estimate_background_color(image: np.ndarray, patch: int = 40) -> np.ndarray
     return samples.mean(axis=0)
 
 
-def find_card_contour(image: np.ndarray) -> np.ndarray | None:
-    """Find the largest quadrilateral contour (the card) against a dark matte background.
+# Candidate-quad generation and scoring, tuned against real misdetections:
+# on a busy/textured background, Otsu picks a threshold low enough that the
+# card merges with background patches into one giant blob — the old
+# "largest contour wins" rule then boxed card+background together. Sweeping
+# a few higher thresholds re-isolates the card, and scoring every candidate
+# by card-likeness picks it out.
+CARD_ASPECT = 63.0 / 88.0
+MIN_CANDIDATE_AREA_FRAC = 0.05
+THRESHOLD_MULTIPLIERS = (1.0, 1.5, 2.0, 2.5)
 
-    Thresholds on per-pixel color distance from the background sample rather than
-    absolute brightness — a plain brightness split assumes the card is brighter
-    than the background, which is false for dark Pokemon card backs and would
-    instead pick out just the bright inner text/art panel.
+
+def _quads_from_contour(contour: np.ndarray) -> list[np.ndarray]:
+    """Both quad interpretations of a contour: a polygonal approximation
+    (follows perspective-skewed edges) and its minimum-area bounding box
+    (robust to rounded corners and nibbled edges). They compete on score."""
+    quads = []
+    peri = cv2.arcLength(contour, True)
+    for eps_frac in (0.02, 0.03, 0.015, 0.05, 0.08):
+        approx = cv2.approxPolyDP(contour, eps_frac * peri, True)
+        if len(approx) == 4:
+            quads.append(order_points(approx.reshape(4, 2).astype(np.float32)))
+            break
+    rect = cv2.minAreaRect(contour)
+    quads.append(order_points(cv2.boxPoints(rect).astype(np.float32)))
+    return quads
+
+
+def _card_likeness_penalty(quad: np.ndarray, contour: np.ndarray, area_frac: float) -> float:
+    """Lower is more card-like. Aspect ratio dominates (it's the most
+    discriminating signal between a card and a boxed background region),
+    rectangularity and solidity refine, and a small size bonus breaks ties
+    toward larger regions (the card fills most of the guide-box crop)."""
+    tl, tr, br, bl = quad
+    w = (np.linalg.norm(tr - tl) + np.linalg.norm(br - bl)) / 2
+    h = (np.linalg.norm(bl - tl) + np.linalg.norm(br - tr)) / 2
+    ratio = min(w, h) / max(max(w, h), 1e-9)
+    aspect_dev = abs(ratio - CARD_ASPECT) / CARD_ASPECT
+    tilt = max(corner_angle_deviations(quad)) / 90.0
+    quad_area = cv2.contourArea(quad.astype(np.int32))
+    solidity = cv2.contourArea(contour) / max(quad_area, 1e-9)
+    return aspect_dev * 3.0 + tilt * 1.0 + (1.0 - min(solidity, 1.0)) * 1.0 - min(area_frac, 0.5) * 0.2
+
+
+def find_card_contour(image: np.ndarray) -> np.ndarray | None:
+    """Find the card's corner quad against a matte background.
+
+    Thresholds on per-pixel color distance from the background sample rather
+    than absolute brightness — a plain brightness split assumes the card is
+    brighter than the background, which is false for dark Pokemon card backs
+    and would instead pick out just the bright inner text/art panel.
+
+    Binarizes at several thresholds (Otsu and multiples of it), collects
+    candidate quads from every sufficiently-large contour at each, and
+    returns the most card-like candidate rather than blindly trusting the
+    largest contour at the Otsu split.
     """
     bg_color = _estimate_background_color(image)
     diff = image.astype(np.float32) - bg_color
     dist = np.sqrt((diff ** 2).sum(axis=2))
     dist_u8 = np.clip(dist, 0, 255).astype(np.uint8)
     blurred = cv2.GaussianBlur(dist_u8, (5, 5), 0)
-    _, thresh = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-
-    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not contours:
-        return None
-
     image_area = image.shape[0] * image.shape[1]
-    largest = max(contours, key=cv2.contourArea)
-    if cv2.contourArea(largest) < image_area * 0.1:
-        return None
 
-    peri = cv2.arcLength(largest, True)
-    for eps_frac in (0.02, 0.03, 0.015, 0.05, 0.08):
-        approx = cv2.approxPolyDP(largest, eps_frac * peri, True)
-        if len(approx) == 4:
-            return order_points(approx.reshape(4, 2).astype(np.float32))
+    otsu_val, _ = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
 
-    # Card edge wasn't a clean quad (rounded corners, noise) — fall back to the
-    # minimum-area bounding rect of the contour.
-    rect = cv2.minAreaRect(largest)
-    box = cv2.boxPoints(rect)
-    return order_points(box.astype(np.float32))
+    best_quad = None
+    best_penalty = np.inf
+    for mult in THRESHOLD_MULTIPLIERS:
+        tval = otsu_val * mult
+        if tval > 250:
+            continue
+        _, thresh = cv2.threshold(blurred, tval, 255, cv2.THRESH_BINARY)
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        for contour in contours:
+            area_frac = cv2.contourArea(contour) / image_area
+            if area_frac < MIN_CANDIDATE_AREA_FRAC:
+                continue
+            for quad in _quads_from_contour(contour):
+                penalty = _card_likeness_penalty(quad, contour, area_frac)
+                if penalty < best_penalty:
+                    best_penalty = penalty
+                    best_quad = quad
+
+    return best_quad
 
 
 def perspective_correct(image: np.ndarray, corners: np.ndarray, size: tuple[int, int]) -> np.ndarray:
