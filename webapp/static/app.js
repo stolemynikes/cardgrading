@@ -161,6 +161,7 @@ async function startCamera() {
     // resolves almost instantly). #camera-error is only ever cleared by an
     // explicit user action now (a new shot, or tapping a thumb to retake).
     document.getElementById("camera-unavailable-banner").hidden = true;
+    setupZoomControl();
     startPrecheckLoop();
     updateStepIndicator();
   } catch (e) {
@@ -174,7 +175,51 @@ function stopCamera() {
     cameraStream.getTracks().forEach((t) => t.stop());
     cameraStream = null;
   }
+  document.getElementById("zoom-row").hidden = true;
   stopPrecheckLoop();
+}
+
+// Real camera zoom via track constraints — NOT a CSS scale. Phone lenses
+// can't focus closer than ~10-15cm, so "fill the guide by moving closer"
+// walks straight into permanent blur; sensor zoom fills the guide from a
+// distance where focus is sharp, and the zoomed frames are what captureShot
+// receives. Shown only when the camera actually supports the zoom
+// constraint (iOS 17+ Safari, Android Chrome); hidden otherwise.
+const MAX_ZOOM_SHOWN = 5; // beyond ~5x, phone digital zoom is mush
+
+function zoomAvailable() {
+  return !document.getElementById("zoom-row").hidden;
+}
+
+function setupZoomControl() {
+  const row = document.getElementById("zoom-row");
+  const slider = document.getElementById("zoom-slider");
+  const valueLabel = document.getElementById("zoom-value");
+  row.hidden = true;
+  const track =
+    cameraStream && typeof cameraStream.getVideoTracks === "function"
+      ? cameraStream.getVideoTracks()[0]
+      : null;
+  if (!track || typeof track.getCapabilities !== "function") return;
+  const caps = track.getCapabilities();
+  if (!caps || !caps.zoom || caps.zoom.max <= caps.zoom.min) return;
+
+  const min = caps.zoom.min;
+  const max = Math.min(caps.zoom.max, MAX_ZOOM_SHOWN);
+  slider.min = min;
+  slider.max = max;
+  slider.step = caps.zoom.step || 0.1;
+  const current = (track.getSettings && track.getSettings().zoom) || min;
+  slider.value = current;
+  valueLabel.textContent = `${Number(current).toFixed(1)}×`;
+  row.hidden = false;
+
+  slider.oninput = () => {
+    const zoom = parseFloat(slider.value);
+    valueLabel.textContent = `${zoom.toFixed(1)}×`;
+    // fire-and-forget: a rejected constraint just leaves the previous zoom
+    track.applyConstraints({ advanced: [{ zoom }] }).catch(() => {});
+  };
 }
 
 function startPrecheckLoop() {
@@ -268,7 +313,7 @@ const NO_COLOR_MESSAGE = "Doesn't look like a card — too little color";
 // data alone, so it can run in an offscreen sample canvas and be unit tested
 // without a real <video>/getUserMedia. Never returns anything that should
 // block the shutter — only ever informs the banner text.
-function computePrecheckMessage(px, isAngled, nativeGuideHeight) {
+function computePrecheckMessage(px, isAngled, nativeGuideHeight, canZoom = false) {
   let sum = 0;
   let sumSq = 0;
   let bright = 0;
@@ -311,7 +356,10 @@ function computePrecheckMessage(px, isAngled, nativeGuideHeight) {
     return "Glare detected — adjust the light angle";
   }
   if (nativeGuideHeight < 700) {
-    return "Move closer to the card";
+    // Physically moving closer runs into the lens's minimum focus distance
+    // (~10-15cm) and goes blurry — when real camera zoom is available,
+    // steer toward that instead.
+    return canZoom ? "Card too small in frame — zoom in" : "Move closer to the card";
   }
   return null;
 }
@@ -355,7 +403,7 @@ function runPrecheck() {
   const imgData = ctx.getImageData(rect.x, rect.y, rect.w, rect.h);
   const nativeGuideHeight = rect.h * (video.videoHeight / sh);
 
-  const message = computePrecheckMessage(imgData.data, isAngled, nativeGuideHeight);
+  const message = computePrecheckMessage(imgData.data, isAngled, nativeGuideHeight, zoomAvailable());
 
   if (message === precheckPendingMessage) {
     precheckPendingCount++;

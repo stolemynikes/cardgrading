@@ -18,7 +18,8 @@
       <div class="protocol-hint">
         <strong>Capture protocol:</strong> dark matte background &middot; phone on a tripod, directly
         overhead &middot; diffuse light from two sides for the flat shots &middot; raking (angled) light
-        for the surface shots.
+        for the surface shots &middot; if the image goes blurry you're inside the lens's focus range —
+        back away ~20cm and use the zoom slider instead.
       </div>
 
       <div class="mode-row">
@@ -36,6 +37,11 @@
           <div id="precheck-banner" class="precheck-banner" hidden></div>
         </div>
         <canvas id="precheck-canvas" hidden></canvas>
+        <div class="zoom-row" id="zoom-row" hidden>
+          <span class="zoom-label">Zoom</span>
+          <input type="range" id="zoom-slider" aria-label="Camera zoom">
+          <span class="zoom-value mono" id="zoom-value">1&times;</span>
+        </div>
         <p class="step-indicator" id="step-indicator">Starting camera…</p>
         <button id="shutter-btn" type="button" class="primary-btn">Shoot</button>
         <div id="camera-error" class="banner banner-error" hidden></div>

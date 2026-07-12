@@ -799,9 +799,82 @@ async function runTest10() {
   assert(stopped === true, "stopCamera stops every track on the active stream");
 }
 
+// --- Test 10b: camera zoom control — real sensor zoom, not CSS scaling ---
+// Phone lenses can't focus closer than ~10-15cm, so users who move close to
+// "fill the guide" get permanent blur. The zoom slider drives the camera
+// track's zoom constraint instead. Only shown when the track supports it.
+async function runTest10b() {
+  // With zoom capability: slider appears, input applies constraints.
+  {
+    const dom = makeDom();
+    const w = dom.window;
+    const doc = w.document;
+    const applied = [];
+    const fakeTrack = {
+      stop: () => {},
+      getCapabilities: () => ({ zoom: { min: 1, max: 10, step: 0.1 } }),
+      getSettings: () => ({ zoom: 1 }),
+      applyConstraints: async (c) => applied.push(c),
+    };
+    const fakeStream = { getTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack] };
+    w.navigator.mediaDevices = { getUserMedia: async () => fakeStream };
+
+    await w.switchToCameraMode();
+    const row = doc.getElementById("zoom-row");
+    const slider = doc.getElementById("zoom-slider");
+    assert(row.hidden === false, "zoom slider appears when the camera supports the zoom constraint");
+    assert(slider.max === "5", `slider max is capped at 5x even when hardware reports 10x (got ${slider.max})`);
+
+    slider.value = "2.5";
+    slider.oninput();
+    assert(applied.length === 1, "moving the slider applies a track constraint");
+    assert(applied[0].advanced[0].zoom === 2.5, "the applied constraint carries the chosen zoom level");
+    assert(doc.getElementById("zoom-value").textContent === "2.5×", "the zoom value label updates");
+
+    // Zoom availability changes the "too far" precheck message: telling a
+    // user who has a zoom slider to physically move closer walks them into
+    // the minimum focus distance — the original blur complaint. Pixel data
+    // must be bright/textured/colorful so only the distance check fires.
+    const cardPx = new Uint8ClampedArray(400 * 4);
+    for (let i = 0; i < cardPx.length; i += 4) {
+      const v = i % 8 === 0 ? 80 : 180;
+      cardPx[i] = v;
+      cardPx[i + 1] = Math.round(v * 0.6);
+      cardPx[i + 2] = Math.round(v * 0.3);
+      cardPx[i + 3] = 255;
+    }
+    assert(
+      w.computePrecheckMessage(cardPx, false, 500, true) === "Card too small in frame — zoom in",
+      "with zoom available, the distance hint says zoom in"
+    );
+    assert(
+      w.computePrecheckMessage(cardPx, false, 500, false) === "Move closer to the card",
+      "without zoom, the distance hint still says move closer"
+    );
+
+    w.stopCamera();
+    assert(row.hidden === true, "stopping the camera hides the zoom slider");
+  }
+
+  // Without zoom capability: no slider.
+  {
+    const dom = makeDom();
+    const w = dom.window;
+    const fakeTrack = { stop: () => {}, getCapabilities: () => ({}) };
+    const fakeStream = { getTracks: () => [fakeTrack], getVideoTracks: () => [fakeTrack] };
+    w.navigator.mediaDevices = { getUserMedia: async () => fakeStream };
+    await w.switchToCameraMode();
+    assert(
+      w.document.getElementById("zoom-row").hidden === true,
+      "zoom slider stays hidden when the camera doesn't support zoom"
+    );
+  }
+}
+
 // --- Test 5: download export produces a complete, self-contained HTML blob ---
 (async () => {
   await runTest2b();
+  await runTest10b();
   await runTest10();
 
   const dom = makeDom();
