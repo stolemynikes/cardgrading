@@ -37,14 +37,15 @@
     "border_detect": {
       "canny_low": 40,
       "canny_high": 120,
-      "search_margin_pct": 12
+      "search_margin_pct": 12,
+      "min_boundary_confidence": 0.35
     }
   },
   "corners_edges": {
     "corner_crop_px": 150,
     "edge_strip_px": 80,
     "border_margin_frac": 0.85,
-    "min_region_px": 15,
+    "min_region_px": 40,
     "physical_edge_margin_px": 3,
     "clahe_clip_limit": 3.0,
     "clahe_tile_grid": 8,

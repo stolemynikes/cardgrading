@@ -21,7 +21,20 @@ class TestHeuristic:
         ge = scoring.assemble_grade(9, 7, None, {})
         assert ge.surface_grade is None
         assert 7.0 <= ge.overall_grade <= 8.0
-        assert "unavailable" in ge.note
+        assert "excludes" in ge.note and "surface" in ge.note
+
+    def test_missing_centering_grades_from_remaining_subgrades(self):
+        # Borderless/full-art card: centering unmeasurable — the overall
+        # estimate must exclude it rather than crash or fabricate.
+        ge = scoring.assemble_grade(None, 7, 8, {})
+        assert ge.centering_grade is None
+        assert 7.0 <= ge.overall_grade <= 8.0
+        assert "centering" in ge.note
+
+    def test_missing_centering_and_surface(self):
+        ge = scoring.assemble_grade(None, 6, None, {})
+        assert ge.overall_grade == pytest.approx(6.0)
+        assert "centering" in ge.note and "surface" in ge.note
 
     def test_clamped_to_valid_range(self):
         ge = scoring.assemble_grade(1, 1, 1, {})
@@ -53,7 +66,11 @@ class TestFittedWeights:
         # Fitted weights need all three sub-grades; without surface the
         # heuristic must be used instead of crashing or guessing.
         ge = scoring.assemble_grade(10, 10, None, self.THRESHOLDS)
-        assert "unavailable" in ge.note
+        assert "fit on" not in ge.note
+
+    def test_falls_back_to_heuristic_without_centering(self):
+        ge = scoring.assemble_grade(None, 10, 8, self.THRESHOLDS)
+        assert "fit on" not in ge.note
 
 
 class TestFitLinearWeights:

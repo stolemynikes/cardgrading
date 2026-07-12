@@ -749,6 +749,20 @@ function subgradeTile(label, grade) {
 }
 
 function centeringSideHTML(label, sideData, overlayImg) {
+  // measurable === false: the border-boundary detection had no confident
+  // signal on this side (borderless/full-art card, or the border isn't
+  // visible in this capture). Showing the raw ratios would present
+  // argmax-of-noise as real measurements. Older reports lack the flag —
+  // treat missing as measurable.
+  if (sideData.measurable === false) {
+    return `<div class="centering-card">
+      <div class="centering-card-header">${label}
+        <span class="grade-pill" style="color:${gradeColor(null)}">n/a</span>
+      </div>
+      ${overlayImg ? `<img class="overlay-img" src="${overlayImg}" alt="${label} centering overlay">` : ""}
+      <div class="muted" style="font-size:0.82rem">Couldn't measure — borderless/full-art card, or the border isn't visible in this capture.</div>
+    </div>`;
+  }
   return `<div class="centering-card">
     <div class="centering-card-header">${label}
       <span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}</span>

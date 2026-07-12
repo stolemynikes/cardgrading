@@ -220,33 +220,43 @@ def grade_card(
     report["centering"] = result.to_dict()
 
     _log(verbose, "\n[centering]")
-    _log(verbose, " front:")
-    print_axis("  horizontal", result.front_horizontal, verbose)
-    print_axis("  vertical  ", result.front_vertical, verbose)
-    _log(verbose, f"  front centering grade: {result.front_grade}")
-    _log(verbose, " back:")
-    print_axis("  horizontal", result.back_horizontal, verbose)
-    print_axis("  vertical  ", result.back_vertical, verbose)
-    _log(verbose, f"  back centering grade: {result.back_grade}")
-    _log(verbose, f"\n overall centering grade: {result.overall_grade}")
+    for side_label, measurable, axis_h, axis_v, side_grade in [
+        ("front", result.front_measurable, result.front_horizontal, result.front_vertical, result.front_grade),
+        ("back", result.back_measurable, result.back_horizontal, result.back_vertical, result.back_grade),
+    ]:
+        _log(verbose, f" {side_label}:")
+        if measurable:
+            print_axis("  horizontal", axis_h, verbose)
+            print_axis("  vertical  ", axis_v, verbose)
+            _log(verbose, f"  {side_label} centering grade: {side_grade}")
+        else:
+            _log(verbose, f"  {side_label} centering unmeasurable — borderless/full-art card, or border not visible in this capture")
+    _log(verbose, f"\n overall centering grade: {result.overall_grade if result.overall_grade is not None else 'n/a'}")
 
-    front_overlay = centering.draw_overlay(front_result.warped, result.front_horizontal, result.front_vertical)
-    back_overlay = centering.draw_overlay(back_result.warped, result.back_horizontal, result.back_vertical)
+    front_overlay = centering.draw_overlay(
+        front_result.warped, result.front_horizontal, result.front_vertical, result.front_measurable
+    )
+    back_overlay = centering.draw_overlay(
+        back_result.warped, result.back_horizontal, result.back_vertical, result.back_measurable
+    )
     cv2.imwrite(str(output_dir / "front_centering_overlay.png"), front_overlay)
     cv2.imwrite(str(output_dir / "back_centering_overlay.png"), back_overlay)
 
-    front_borders = corners_edges.BorderWidths(
-        left=result.front_horizontal.side_a_px,
-        right=result.front_horizontal.side_b_px,
-        top=result.front_vertical.side_a_px,
-        bottom=result.front_vertical.side_b_px,
-    )
-    back_borders = corners_edges.BorderWidths(
-        left=result.back_horizontal.side_a_px,
-        right=result.back_horizontal.side_b_px,
-        top=result.back_vertical.side_a_px,
-        bottom=result.back_vertical.side_b_px,
-    )
+    def side_borders(measurable: bool, axis_h, axis_v, image) -> corners_edges.BorderWidths:
+        if measurable:
+            return corners_edges.BorderWidths(
+                left=axis_h.side_a_px, right=axis_h.side_b_px,
+                top=axis_v.side_a_px, bottom=axis_v.side_b_px,
+            )
+        # Border widths from an unmeasurable side are argmax-of-noise — sizing
+        # the corner/edge crops from them produced postage-stamp crops whose
+        # whitening percentages were pure noise. Fall back to a typical
+        # border width (~4% of the card dimension) instead.
+        h, w = image.shape[:2]
+        return corners_edges.BorderWidths(left=w * 0.04, right=w * 0.04, top=h * 0.04, bottom=h * 0.04)
+
+    front_borders = side_borders(result.front_measurable, result.front_horizontal, result.front_vertical, front_result.warped)
+    back_borders = side_borders(result.back_measurable, result.back_horizontal, result.back_vertical, back_result.warped)
     stage("corners_edges")
     ce_result, ce_overlays = corners_edges.analyze_corners_edges(
         front_result.warped, back_result.warped, front_borders, back_borders, thresholds

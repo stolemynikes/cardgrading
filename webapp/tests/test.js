@@ -106,6 +106,34 @@ function assert(cond, message) {
   assert(!content.includes("might be worse"), "no warning banner when all capture-quality gates pass");
 }
 
+// --- Test 1d: unmeasurable centering (borderless/full-art card) renders honestly ---
+// Real case: a full-art promo produced a fake "89/11 grade 3" because the
+// border detector returned argmax-of-noise. The server now marks such sides
+// measurable:false with grade null — the report must say "couldn't measure"
+// instead of showing noise ratios, and still render the rest of the report.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.centering.front.measurable = false;
+  report.centering.front.grade = null;
+  report.centering.overall_grade = report.centering.back.grade;
+  report.grade_estimate.centering_grade = null;
+  dom.window.handleReport(report, data.images);
+
+  const doc = dom.window.document;
+  assert(doc.getElementById("report-view").hidden === false, "report renders with an unmeasurable centering side");
+  const content = doc.getElementById("report-content").innerHTML;
+  assert(content.includes("Couldn't measure"), "unmeasurable side shows the couldn't-measure note");
+  assert(content.includes("borderless/full-art"), "note explains the likely cause");
+  const frontRatio = data.report.centering.front.horizontal.ratio;
+  assert(!content.includes(`>${frontRatio}<`), "the noise ratio numbers are not shown for the unmeasurable side");
+  const backRatio = data.report.centering.back.horizontal.ratio;
+  assert(content.includes(backRatio), "the measurable back side still shows its real ratios");
+  // centering subgrade tile shows n/a
+  assert(content.includes("n/a"), "centering subgrade renders as n/a");
+}
+
 // --- Test 2: capture-quality failure surfaces a per-slot error and stays on capture view ---
 {
   const dom = makeDom();

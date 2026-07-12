@@ -76,6 +76,15 @@ computes left/right and top/bottom ratios, and grades them against PSA-style tol
 tables (55/45 → grade 10, 60/40 → grade 9, etc., with a looser table for the back).
 Produces an overlay image showing exactly where it thinks the border/panel boundary is.
 
+Each boundary detection carries a **confidence** (how much of the sampled band the
+strongest edge spans — a real border boundary is a straight line across the whole
+band; noise isn't). A side with any low-confidence boundary is reported as
+**unmeasurable** rather than graded: borderless/full-art cards have no border to
+measure, and a too-dim or blurry capture can hide a real one. The overall grade then
+uses the measurable side(s), or excludes centering entirely. Before this check, a
+real full-art promo produced a confident-looking "89/11 grade 3" from pure noise —
+which also collapsed the Stage 3 crop sizes to meaningless 12×12 patches.
+
 ### Stage 3 — Corners & edges (`pipeline/corners_edges.py`)
 Crops the four corners and four edge strips, and runs a filter stack (CLAHE contrast
 boost + blue-channel isolation + adaptive threshold) to turn "whitening" — chipped

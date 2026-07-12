@@ -24,7 +24,7 @@ FEATURES = ["centering", "corners_edges", "surface", "min_sub_grade"]
 
 @dataclass
 class GradeEstimate:
-    centering_grade: int
+    centering_grade: int | None  # None if borders were unmeasurable (borderless/full-art)
     corners_edges_grade: int
     surface_grade: int | None  # None if vision review didn't run
     overall_grade: float
@@ -65,11 +65,11 @@ def _fitted_overall(fitted: dict, centering: int, corners_edges: int, surface: i
 
 
 def assemble_grade(
-    centering_grade: int, corners_edges_grade: int, surface_grade: int | None, thresholds: dict
+    centering_grade: int | None, corners_edges_grade: int, surface_grade: int | None, thresholds: dict
 ) -> GradeEstimate:
     fitted = thresholds.get("scoring", {}).get("fitted_weights")
 
-    if fitted is not None and surface_grade is not None:
+    if fitted is not None and centering_grade is not None and surface_grade is not None:
         overall = _fitted_overall(fitted, centering_grade, corners_edges_grade, surface_grade)
         meta = thresholds["scoring"]["fit_metadata"]
         note = (
@@ -78,12 +78,20 @@ def assemble_grade(
             + (f", leave-one-out MAE {meta['loo_mae']:.2f})" if meta.get("loo_mae") is not None else ")")
         )
     else:
-        sub_grades = [centering_grade, corners_edges_grade]
+        sub_grades = [corners_edges_grade]
+        missing = []
+        if centering_grade is not None:
+            sub_grades.append(centering_grade)
+        else:
+            missing.append("centering (borders unmeasurable — borderless/full-art card or low-contrast capture)")
         if surface_grade is not None:
             sub_grades.append(surface_grade)
-            note = "surface sub-grade included (vision review ran); overall estimate is indicative, not definitive"
         else:
-            note = "surface sub-grade unavailable (no vision review) — overall estimate excludes it and is less reliable"
+            missing.append("surface (no vision review)")
+        if missing:
+            note = f"overall estimate excludes {'; '.join(missing)} — less reliable"
+        else:
+            note = "all sub-grades included; overall estimate is indicative, not definitive"
         overall = _heuristic_overall(sub_grades)
 
     overall = max(1.0, min(10.0, overall))
