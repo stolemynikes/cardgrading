@@ -106,9 +106,25 @@ async def api_job(job_id: str):
     return {"status": "done", **job.result}
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class NoStoreCacheStaticFiles(StaticFiles):
+    """Static files with `Cache-Control: no-cache` (revalidate every time).
+
+    Without this, mobile Safari happily reuses a cached app.js across visits
+    without revalidating — a real user graded a card with a weeks... days-old
+    frontend against a newer backend and got "grade null" rendered where the
+    new JS would have shown "couldn't measure". `no-cache` still allows ETag
+    304s, so repeat loads stay cheap; it just forces the revalidation.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", NoStoreCacheStaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
