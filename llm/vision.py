@@ -72,40 +72,60 @@ class SurfaceJudgment(BaseModel):
     reasoning: str = Field(description="Brief explanation of the grade, 2-4 sentences")
 
 
+FLAT_GRADING_STANDARDS = """You are assisting with pre-grading a Pokemon trading card from a single \
+flat, evenly-lit, perspective-corrected photo of one whole side, using PSA's 1-10 standards as a \
+reference (10 = Gem Mint, flawless; 9 = one very minor flaw; 8-7 = light wear visible under normal \
+light; 6-5 = clearly noticeable wear; 4 and below = significant damage).
+
+Judge three things independently from what is actually visible:
+1. Corners — sharpness vs. rounding/whitening/dings at each of the four corners.
+2. Edges — whitening, chipping, or roughness along the four edges.
+3. Surface — scratches, print lines, indentations, creases, staining. IMPORTANT: a flat evenly-lit \
+photo hides shallow scratches and print lines that only show under angled (raking) light, so treat \
+your surface estimate as an upper bound and say so in the reasoning; lower your stated confidence if \
+lighting or focus limits what you can see.
+
+Do not penalize holographic foil patterns, normal print texture, or artwork elements as defects. If \
+the photo is too dark, blurry, or small to judge a category, grade it conservatively and mark \
+confidence low."""
+
+
+class FlatJudgment(BaseModel):
+    corners_grade: int = Field(ge=1, le=10, description="PSA-style corners sub-grade estimate from this photo")
+    edges_grade: int = Field(ge=1, le=10, description="PSA-style edges sub-grade estimate from this photo")
+    surface_grade: int = Field(ge=1, le=10, description="PSA-style surface estimate — an upper bound, since flat lighting hides shallow defects")
+    confidence: str = Field(description="low, medium, or high confidence, given the photo quality")
+    defects_found: list[str] = Field(description="Short description of each visible defect; empty if none")
+    reasoning: str = Field(description="Brief explanation of the grades, 2-4 sentences")
+
+
 def _encode_image(path: Path) -> tuple[str, str]:
     media_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
     data = base64.standard_b64encode(path.read_bytes()).decode("utf-8")
     return data, media_type
 
 
-def _judge_claude(crop_path: Path, defect_map_path: Path) -> SurfaceJudgment:
+# Both providers take the same shape of request: a system prompt, an
+# alternating sequence of text and image-Path items, and a Pydantic schema
+# for the structured response.
+def _judge_claude(system: str, items: list, schema: type[BaseModel]) -> BaseModel:
     client = anthropic.Anthropic()
 
-    crop_data, crop_media = _encode_image(crop_path)
-    map_data, map_media = _encode_image(defect_map_path)
+    content = []
+    for item in items:
+        if isinstance(item, Path):
+            data, media = _encode_image(item)
+            content.append({"type": "image", "source": {"type": "base64", "media_type": media, "data": data}})
+        else:
+            content.append({"type": "text", "text": item})
 
     try:
         response = client.messages.parse(
             model=CLAUDE_MODEL,
             max_tokens=1024,
-            system=SURFACE_GRADING_STANDARDS,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Original crop (raking light):"},
-                        {"type": "image", "source": {"type": "base64", "media_type": crop_media, "data": crop_data}},
-                        {
-                            "type": "text",
-                            "text": "Algorithmic defect visibility map (red/hot = high local contrast, "
-                            "NOT necessarily a real defect):",
-                        },
-                        {"type": "image", "source": {"type": "base64", "media_type": map_media, "data": map_data}},
-                        {"type": "text", "text": "Judge this card region's surface condition."},
-                    ],
-                }
-            ],
-            output_format=SurfaceJudgment,
+            system=system,
+            messages=[{"role": "user", "content": content}],
+            output_format=schema,
         )
     except TypeError as e:
         # The SDK raises a plain TypeError (not an AnthropicError subclass) when
@@ -116,11 +136,11 @@ def _judge_claude(crop_path: Path, defect_map_path: Path) -> SurfaceJudgment:
 
     judgment = response.parsed_output
     if judgment is None:
-        raise VisionUnavailable("Claude did not return a parseable surface judgment")
+        raise VisionUnavailable("Claude did not return a parseable judgment")
     return judgment
 
 
-def _judge_gemini(crop_path: Path, defect_map_path: Path) -> SurfaceJudgment:
+def _judge_gemini(system: str, items: list, schema: type[BaseModel]) -> BaseModel:
     # Imported lazily: google-genai is only needed when a Gemini key is
     # actually configured, so a missing/broken install can't take down the
     # no-AI code path.
@@ -132,49 +152,80 @@ def _judge_gemini(crop_path: Path, defect_map_path: Path) -> SurfaceJudgment:
 
     client = genai.Client()
 
-    def part(path: Path) -> "types.Part":
-        mime = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
-        return types.Part.from_bytes(data=path.read_bytes(), mime_type=mime)
+    contents = []
+    for item in items:
+        if isinstance(item, Path):
+            mime = "image/png" if item.suffix.lower() == ".png" else "image/jpeg"
+            contents.append(types.Part.from_bytes(data=item.read_bytes(), mime_type=mime))
+        else:
+            contents.append(item)
 
     try:
         response = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=[
-                "Original crop (raking light):",
-                part(crop_path),
-                "Algorithmic defect visibility map (red/hot = high local contrast, "
-                "NOT necessarily a real defect):",
-                part(defect_map_path),
-                "Judge this card region's surface condition.",
-            ],
+            contents=contents,
             config=types.GenerateContentConfig(
-                system_instruction=SURFACE_GRADING_STANDARDS,
+                system_instruction=system,
                 response_mime_type="application/json",
-                response_schema=SurfaceJudgment,
+                response_schema=schema,
             ),
         )
     except Exception as e:  # genai errors (auth, 429 rate limit, network) share no useful base with ours
         raise VisionUnavailable(f"Gemini API error: {e}") from e
 
     judgment = response.parsed
-    if not isinstance(judgment, SurfaceJudgment):
-        raise VisionUnavailable("Gemini did not return a parseable surface judgment")
+    if not isinstance(judgment, schema):
+        raise VisionUnavailable("Gemini did not return a parseable judgment")
     return judgment
 
 
+def _call_structured(system: str, items: list, schema: type[BaseModel]) -> tuple[BaseModel, str]:
+    """Dispatch to whichever provider has credentials. Returns (judgment, model)."""
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return _judge_claude(system, items, schema), CLAUDE_MODEL
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        return _judge_gemini(system, items, schema), GEMINI_MODEL
+    # No env keys — the anthropic SDK may still find an `ant auth login`
+    # profile; let it try, and normalize the failure if it can't.
+    return _judge_claude(system, items, schema), CLAUDE_MODEL
+
+
 def judge_surface(crop_path: Path, defect_map_path: Path) -> tuple[SurfaceJudgment, str]:
-    """Judge surface condition from the original crop + defect map.
+    """Judge surface condition from the raking-light crop + defect map.
 
     Returns (judgment, model_name) — the model name goes into the report so
     it's clear which provider produced which judgment when comparing runs.
-    Raises VisionUnavailable on any failure; surface vision review is
-    optional, so callers should catch it and treat it as "review skipped",
-    not a fatal error for the rest of the report.
+    Raises VisionUnavailable on any failure; vision review is optional, so
+    callers should catch it and treat it as "review skipped", not a fatal
+    error for the rest of the report.
     """
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return _judge_claude(crop_path, defect_map_path), CLAUDE_MODEL
-    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-        return _judge_gemini(crop_path, defect_map_path), GEMINI_MODEL
-    # No env keys — the anthropic SDK may still find an `ant auth login`
-    # profile; let it try, and normalize the failure if it can't.
-    return _judge_claude(crop_path, defect_map_path), CLAUDE_MODEL
+    return _call_structured(
+        SURFACE_GRADING_STANDARDS,
+        [
+            "Original crop (raking light):",
+            crop_path,
+            "Algorithmic defect visibility map (red/hot = high local contrast, NOT necessarily a real defect):",
+            defect_map_path,
+            "Judge this card region's surface condition.",
+        ],
+        SurfaceJudgment,
+    )
+
+
+def judge_flat(aligned_path: Path, side_label: str) -> tuple[FlatJudgment, str]:
+    """Judge corners/edges/surface from a flat perspective-corrected capture.
+
+    Complements the deterministic pipeline on the same photo: an opinion on
+    corners/edges wear that doesn't depend on the whitening thresholds, and
+    an upper-bound surface estimate when no raking-light shots were taken.
+    Same error contract as judge_surface.
+    """
+    return _call_structured(
+        FLAT_GRADING_STANDARDS,
+        [
+            f"Perspective-corrected flat photo of the card's {side_label}:",
+            aligned_path,
+            "Judge this side's corners, edges, and (as far as visible) surface condition.",
+        ],
+        FlatJudgment,
+    )

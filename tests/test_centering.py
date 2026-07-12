@@ -90,6 +90,23 @@ class TestMeasurable:
         r = centering.measure_centering(card, card, THRESHOLDS)
         assert r.overall_grade is None
 
+    def test_dim_capture_recovered_by_normalization(self):
+        # Underexposed but real border (70 vs 45 gray levels): the raw Canny
+        # pass sees nothing, but the gamma+CLAHE second-chance pass recovers
+        # it — this was the real "back centering 99/1" failure mode, where a
+        # dim capture hid a perfectly normal border.
+        card = bordered_card(border_val=70, panel_val=45)
+        r = centering.measure_centering(card, card, THRESHOLDS)
+        assert r.front_measurable
+        assert r.front_grade == 10
+
+    def test_normalization_does_not_rescue_borderless(self):
+        # The second-chance pass must not turn borderless art into a fake
+        # border — CLAHE inflates art texture too, hence its stricter bar.
+        card = borderless_card()
+        r = centering.measure_centering(card, card, THRESHOLDS)
+        assert r.front_measurable is False
+
     def test_to_dict_carries_measurability(self):
         r = centering.measure_centering(borderless_card(), bordered_card(), THRESHOLDS)
         d = r.to_dict()

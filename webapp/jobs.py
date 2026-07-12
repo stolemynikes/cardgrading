@@ -27,6 +27,7 @@ STAGE_MESSAGES = {
     "centering": "Measuring centering…",
     "corners_edges": "Analyzing corners & edges…",
     "surface": "Mapping surface…",
+    "vision_flat": "Getting AI opinion…",
     "scoring": "Assembling grade…",
     "done": "Done",
 }

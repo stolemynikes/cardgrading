@@ -162,7 +162,8 @@ def grade_card(
     of cards (see calibration/calibrate.py).
 
     on_stage, if given, is called with a short stage-name string ("detect",
-    "centering", "corners_edges", "surface", "scoring", "done") right before
+    "centering", "corners_edges", "surface", "vision_flat", "scoring",
+    "done") right before
     each stage starts — for callers that want progress reporting (the
     webapp's job polling) without parsing verbose print output. Stage names
     are deliberately UI-agnostic; the caller maps them to human-readable text.
@@ -288,8 +289,46 @@ def grade_card(
         report["surface"] = None
         _log(verbose, "\n[surface] skipped — pass --surface front_angled.png back_angled.png to run it")
 
+    # Vision opinion on the flat captures themselves — an independent take on
+    # corners/edges wear (not tied to the whitening thresholds) plus an
+    # upper-bound surface estimate. Runs whenever vision credentials exist;
+    # skipped silently otherwise, same contract as the raking-light judgment.
+    stage("vision_flat")
+    report["vision_flat"] = None
+    try:
+        front_flat, flat_model = vision.judge_flat(output_dir / "front_aligned.png", "front")
+        back_flat, _ = vision.judge_flat(output_dir / "back_aligned.png", "back")
+    except vision.VisionUnavailable as e:
+        _log(verbose, f"\n[vision] flat-shot review skipped: {e}")
+    else:
+        report["vision_flat"] = {
+            "front": {**front_flat.model_dump(), "model": flat_model},
+            "back": {**back_flat.model_dump(), "model": flat_model},
+        }
+        _log(verbose, f"\n[vision] flat-shot opinion ({flat_model}):")
+        for side_label, judgment in (("front", front_flat), ("back", back_flat)):
+            _log(
+                verbose,
+                f"  {side_label}: corners={judgment.corners_grade} edges={judgment.edges_grade} "
+                f"surface<={judgment.surface_grade} (confidence={judgment.confidence})",
+            )
+
+    # No raking-light surface judgment (2-shot flow, or the angled shots
+    # failed)? The flat-shot surface estimate fills in — clearly labeled as
+    # an upper bound, since flat lighting hides shallow scratches.
+    surface_from_flat = False
+    if surface_grade is None and report["vision_flat"] is not None:
+        surface_grade = min(
+            report["vision_flat"]["front"]["surface_grade"],
+            report["vision_flat"]["back"]["surface_grade"],
+        )
+        surface_from_flat = True
+
     stage("scoring")
-    grade_estimate = scoring.assemble_grade(result.overall_grade, ce_result.overall_grade, surface_grade, thresholds)
+    grade_estimate = scoring.assemble_grade(
+        result.overall_grade, ce_result.overall_grade, surface_grade, thresholds,
+        surface_from_flat=surface_from_flat,
+    )
     report["grade_estimate"] = grade_estimate.to_dict()
 
     _log(verbose, "\n[grade estimate]")

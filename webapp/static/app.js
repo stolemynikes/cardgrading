@@ -972,7 +972,37 @@ function buildReportHTML(report, images) {
     </section>`;
   }
 
+  if (report.vision_flat) {
+    html += `<section class="report-section">
+      <h2>AI opinion <span class="indicative-tag">from the flat shots — indicative</span></h2>
+      <div class="side-by-side">
+        ${flatJudgmentHTML("Front", report.vision_flat.front)}
+        ${flatJudgmentHTML("Back", report.vision_flat.back)}
+      </div>
+    </section>`;
+  }
+
   return html;
+}
+
+// A vision model's independent take on the flat captures: corners/edges wear
+// judged visually (not via whitening thresholds) and an upper-bound surface
+// estimate — flat, even lighting hides shallow scratches, which is why the
+// raking-light flow exists.
+function flatJudgmentHTML(label, vj) {
+  if (!vj) return "";
+  const defects = (vj.defects_found || []).length
+    ? `<ul>${vj.defects_found.map((d) => `<li>${escapeHtml(d)}</li>`).join("")}</ul>`
+    : `<div class="muted">no defects flagged</div>`;
+  return `<div class="ce-card">
+    <div class="centering-card-header">${label}
+      <span class="muted">(confidence: ${escapeHtml(vj.confidence)}${vj.model ? ", " + escapeHtml(vj.model) : ""})</span>
+    </div>
+    <div class="axis-row"><span class="grade-pill" style="color:${gradeColor(vj.corners_grade)}">corners ${vj.corners_grade}</span></div>
+    <div class="axis-row"><span class="grade-pill" style="color:${gradeColor(vj.edges_grade)}">edges ${vj.edges_grade}</span></div>
+    <div class="axis-row"><span class="grade-pill" style="color:${gradeColor(vj.surface_grade)}">surface &le; ${vj.surface_grade}</span></div>
+    <div class="vision-judgment">${defects}</div>
+  </div>`;
 }
 
 function wireSurfaceSliders() {

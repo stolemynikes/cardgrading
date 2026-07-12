@@ -36,6 +36,16 @@ class TestHeuristic:
         assert ge.overall_grade == pytest.approx(6.0)
         assert "centering" in ge.note and "surface" in ge.note
 
+    def test_surface_from_flat_shots_is_labeled(self):
+        # When the surface sub-grade came from the flat captures (no raking
+        # light), the note must say it's an upper bound — flat lighting
+        # hides shallow scratches.
+        ge = scoring.assemble_grade(9, 8, 9, {}, surface_from_flat=True)
+        assert "upper bound" in ge.note
+        # and the flag is meaningless without a surface grade
+        ge2 = scoring.assemble_grade(9, 8, None, {}, surface_from_flat=True)
+        assert "upper bound" not in ge2.note
+
     def test_clamped_to_valid_range(self):
         ge = scoring.assemble_grade(1, 1, 1, {})
         assert 1.0 <= ge.overall_grade <= 10.0

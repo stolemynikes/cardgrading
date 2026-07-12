@@ -109,6 +109,24 @@ def _offset_from_end(profile: np.ndarray, search_px: int) -> int:
 # borderless art ~0.15-0.17, dim or heavily blurred captures ~0.
 DEFAULT_MIN_BOUNDARY_CONFIDENCE = 0.35
 
+# Second-chance bar for illumination-normalized re-measurement. Gamma+CLAHE
+# recovers boundaries from underexposed captures (a dim bordered card's
+# confidence goes 0.0 -> ~0.5) but also inflates art texture (borderless
+# scenes rise to ~0.44), so the normalized pass needs a stricter bar than
+# the raw pass — 0.5 sits between those two measured outcomes.
+DEFAULT_NORMALIZED_MIN_CONFIDENCE = 0.5
+
+
+def _normalize_illumination(gray: np.ndarray) -> np.ndarray:
+    """Gamma-correct toward mid-gray, then CLAHE for local contrast — makes
+    a border/panel boundary in an underexposed capture visible to Canny."""
+    mean = gray.mean()
+    if mean > 0:
+        gamma = np.log(0.5) / np.log(np.clip(mean / 255.0, 0.05, 0.95))
+        lut = np.clip(((np.arange(256) / 255.0) ** gamma) * 255.0, 0, 255).astype(np.uint8)
+        gray = lut[gray]
+    return cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(gray)
+
 
 def _peak_confidence(profile: np.ndarray, window: slice, band_px: int) -> float:
     """Strongest edge in the window as a fraction of a perfect straight edge."""
@@ -118,7 +136,9 @@ def _peak_confidence(profile: np.ndarray, window: slice, band_px: int) -> float:
     return float(vals.max()) / (band_px * 255.0)
 
 
-def _measure_borders(image: np.ndarray, cfg: dict) -> tuple[tuple[float, float, float, float], dict[str, float]]:
+def _measure_borders(
+    image: np.ndarray, cfg: dict, normalize: bool = False
+) -> tuple[tuple[float, float, float, float], dict[str, float]]:
     """Return ((left_px, right_px, top_px, bottom_px), per-boundary confidence).
 
     The offsets are always computed (argmax of the edge profile picks
@@ -126,6 +146,8 @@ def _measure_borders(image: np.ndarray, cfg: dict) -> tuple[tuple[float, float, 
     each pick is a real border boundary or just the strongest noise.
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    if normalize:
+        gray = _normalize_illumination(gray)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     h, w = gray.shape
     margin = cfg["search_margin_pct"] / 100.0
@@ -206,21 +228,40 @@ def draw_overlay(image: np.ndarray, axis_h: AxisCentering, axis_v: AxisCentering
     return overlay
 
 
+def _measure_side(image: np.ndarray, border_cfg: dict) -> tuple[tuple[float, float, float, float], dict[str, float], bool]:
+    """Measure one side's borders, with an illumination-normalized retry.
+
+    Raw measurement first; if any boundary is below the confidence floor,
+    re-measure on a gamma+CLAHE-normalized image against a stricter bar
+    (normalization recovers dim captures but also inflates art texture).
+    Returns (widths, confidences, measurable).
+    """
+    min_conf = border_cfg.get("min_boundary_confidence", DEFAULT_MIN_BOUNDARY_CONFIDENCE)
+    norm_bar = border_cfg.get("normalized_min_boundary_confidence", DEFAULT_NORMALIZED_MIN_CONFIDENCE)
+
+    widths, conf = _measure_borders(image, border_cfg)
+    if all(v >= min_conf for v in conf.values()):
+        return widths, conf, True
+
+    widths_n, conf_n = _measure_borders(image, border_cfg, normalize=True)
+    if all(v >= norm_bar for v in conf_n.values()):
+        return widths_n, conf_n, True
+
+    # keep the raw numbers in the debug output — they're what failed first
+    return widths, conf, False
+
+
 def measure_centering(front: np.ndarray, back: np.ndarray, thresholds: dict) -> CenteringResult:
     cfg = thresholds["centering"]
     border_cfg = cfg["border_detect"]
-    min_conf = border_cfg.get("min_boundary_confidence", DEFAULT_MIN_BOUNDARY_CONFIDENCE)
-
-    (fl, fr, ft, fb), front_conf = _measure_borders(front, border_cfg)
-    (bl, br, bt, bb), back_conf = _measure_borders(back, border_cfg)
 
     # If any boundary on a side can't be found confidently, that whole side's
     # centering is unmeasurable — a borderless/full-art card, or a capture
     # too blurry/dim to see the border. Reporting a grade anyway would be
     # fake precision from argmax-of-noise (a real full-art card produced a
     # confident-looking "89/11 grade 3" before this check existed).
-    front_measurable = all(v >= min_conf for v in front_conf.values())
-    back_measurable = all(v >= min_conf for v in back_conf.values())
+    (fl, fr, ft, fb), front_conf, front_measurable = _measure_side(front, border_cfg)
+    (bl, br, bt, bb), back_conf, back_measurable = _measure_side(back, border_cfg)
 
     front_h = _axis_centering("left", "right", fl, fr, cfg["front_tolerances"])
     front_v = _axis_centering("top", "bottom", ft, fb, cfg["front_tolerances"])

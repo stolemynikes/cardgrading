@@ -65,7 +65,11 @@ def _fitted_overall(fitted: dict, centering: int, corners_edges: int, surface: i
 
 
 def assemble_grade(
-    centering_grade: int | None, corners_edges_grade: int, surface_grade: int | None, thresholds: dict
+    centering_grade: int | None,
+    corners_edges_grade: int,
+    surface_grade: int | None,
+    thresholds: dict,
+    surface_from_flat: bool = False,
 ) -> GradeEstimate:
     fitted = thresholds.get("scoring", {}).get("fitted_weights")
 
@@ -93,6 +97,9 @@ def assemble_grade(
         else:
             note = "all sub-grades included; overall estimate is indicative, not definitive"
         overall = _heuristic_overall(sub_grades)
+
+    if surface_from_flat and surface_grade is not None:
+        note += " · surface judged from the flat shots only — flat lighting hides shallow scratches, treat it as an upper bound"
 
     overall = max(1.0, min(10.0, overall))
 

@@ -76,6 +76,37 @@ class TestProviderSelection:
                 vision.judge_surface(CROP, DEFECT_MAP)
 
 
+class TestFlatJudgment:
+    FLAT = vision.FlatJudgment(
+        corners_grade=8,
+        edges_grade=7,
+        surface_grade=9,
+        confidence="medium",
+        defects_found=[],
+        reasoning="Light edge wear visible.",
+    )
+
+    def test_judge_flat_uses_same_provider_selection(self, monkeypatch):
+        clear_keys(monkeypatch)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch.object(vision, "_judge_gemini", return_value=self.FLAT) as gemini:
+            judgment, model = vision.judge_flat(Path("aligned.png"), "front")
+        gemini.assert_called_once()
+        assert model == vision.GEMINI_MODEL
+        assert judgment.corners_grade == 8
+
+    def test_judge_flat_passes_flat_standards_and_schema(self, monkeypatch):
+        clear_keys(monkeypatch)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch.object(vision, "_judge_gemini", return_value=self.FLAT) as gemini:
+            vision.judge_flat(Path("aligned.png"), "back")
+        system, items, schema = gemini.call_args[0]
+        assert "flat" in system.lower()
+        assert schema is vision.FlatJudgment
+        assert any(isinstance(i, Path) for i in items)
+        assert any("back" in i for i in items if isinstance(i, str))
+
+
 class TestFailureNormalization:
     def test_gemini_error_surfaces_as_vision_unavailable(self, monkeypatch, tmp_path):
         # A real (non-mocked) _judge_gemini call with a bogus key must come

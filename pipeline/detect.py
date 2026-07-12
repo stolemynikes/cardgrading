@@ -219,7 +219,7 @@ def check_tilt(corners: np.ndarray, cfg: dict) -> QualityGate:
     return QualityGate("tilt", passed, f"max corner angle deviation={max_dev:.2f} deg", max_dev)
 
 
-def check_aspect_ratio(corners: np.ndarray, cfg: dict) -> QualityGate:
+def check_aspect_ratio(corners: np.ndarray, cfg: dict, tilt_ok: bool = False) -> QualityGate:
     """Check the detected quad's side-length ratio against the card's 63:88.
 
     Measured on the pre-warp corner quad, NOT the warped image —
@@ -229,6 +229,14 @@ def check_aspect_ratio(corners: np.ndarray, cfg: dict) -> QualityGate:
     minAreaRect fallback that boxed card+background together (which passes
     the tilt gate trivially, since boxPoints corners are exactly 90 deg)
     shows up here as a wildly wrong width:height ratio.
+
+    When the tilt gate passed (clean right-angle corners), moderate aspect
+    deviation is plausibly perspective foreshortening from a slightly
+    off-overhead camera — which perspective_correct fixes — so a relaxed
+    tolerance applies. Measured misdetections stay blocked either way: the
+    card+background boxes came in at 15-28% deviation, far past the relaxed
+    bound, while a genuinely off-angle capture of a real card sits in the
+    3-8% range.
     """
     tl, tr, br, bl = corners
     quad_w = (np.linalg.norm(tr - tl) + np.linalg.norm(br - bl)) / 2
@@ -237,7 +245,10 @@ def check_aspect_ratio(corners: np.ndarray, cfg: dict) -> QualityGate:
     expected_ratio = expected_w / expected_h
     actual_ratio = quad_w / max(quad_h, 1e-9)
     deviation_pct = 100.0 * abs(actual_ratio - expected_ratio) / expected_ratio
-    passed = deviation_pct <= cfg["aspect_ratio_tolerance_pct"]
+    tolerance = cfg["aspect_ratio_tolerance_pct"]
+    if tilt_ok:
+        tolerance = cfg.get("aspect_ratio_tolerance_upright_pct", tolerance)
+    passed = deviation_pct <= tolerance
     return QualityGate(
         "aspect_ratio",
         passed,
@@ -330,8 +341,9 @@ def detect_and_normalize(image: np.ndarray, thresholds: dict) -> DetectResult:
         gates.append(QualityGate("card_detection", False, "no card contour found"))
         return DetectResult(ok=False, warped=None, gates=gates, contour=None)
     gates.append(QualityGate("card_detection", True, "card contour found"))
-    gates.append(check_tilt(corners, cap_cfg))
-    gates.append(check_aspect_ratio(corners, cap_cfg))
+    tilt_gate = check_tilt(corners, cap_cfg)
+    gates.append(tilt_gate)
+    gates.append(check_aspect_ratio(corners, cap_cfg, tilt_ok=tilt_gate.passed))
 
     size = (cap_cfg["canonical_width_px"], cap_cfg["canonical_height_px"])
     warped = perspective_correct(image, corners, size)

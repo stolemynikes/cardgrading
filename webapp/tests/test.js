@@ -138,6 +138,37 @@ function assert(cond, message) {
   assert(content.includes("vision judgment: grade 9"), "a judgment without a model field still renders");
 }
 
+// --- Test 1f: the flat-shot AI opinion section renders when present, absent otherwise ---
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+
+  // absent -> no section (the no-AI-key path must look exactly like before)
+  dom.window.handleReport(data.report, data.images);
+  let content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(!content.includes("AI opinion"), "no AI-opinion section when vision_flat is absent");
+
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.vision_flat = {
+    front: {
+      corners_grade: 8, edges_grade: 7, surface_grade: 9,
+      confidence: "medium", defects_found: ["slight whitening on the bottom-left corner"],
+      reasoning: "Light wear.", model: "gemini-flash-latest",
+    },
+    back: {
+      corners_grade: 9, edges_grade: 9, surface_grade: 10,
+      confidence: "high", defects_found: [], reasoning: "Clean.", model: "gemini-flash-latest",
+    },
+  };
+  dom.window.handleReport(report, data.images);
+  content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("AI opinion"), "AI-opinion section renders when vision_flat is present");
+  assert(content.includes("corners 8"), "front corners opinion shown");
+  assert(content.includes("surface &le; 10") || content.includes("surface ≤ 10"), "surface shown as an upper bound");
+  assert(content.includes("slight whitening on the bottom-left corner"), "flagged defects listed");
+  assert(content.includes("gemini-flash-latest"), "judging model shown");
+}
+
 // --- Test 1d: unmeasurable centering (borderless/full-art card) renders honestly ---
 // Real case: a full-art promo produced a fake "89/11 grade 3" because the
 // border detector returned argmax-of-noise. The server now marks such sides

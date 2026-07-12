@@ -16,6 +16,7 @@ from pipeline import detect
 CAP_CFG = {
     "card_aspect_ratio": [63, 88],
     "aspect_ratio_tolerance_pct": 3.0,
+    "aspect_ratio_tolerance_upright_pct": 8.0,
     "max_corner_angle_deviation_deg": 2.0,
     "min_input_shortest_side_px": 1200,
 }
@@ -75,6 +76,19 @@ class TestAspectRatioGate:
         a = detect.check_aspect_ratio(quad(630, 880), CAP_CFG)
         b = detect.check_aspect_ratio(quad(880, 630), CAP_CFG)
         assert a.value != b.value
+
+    def test_perspective_foreshortening_tolerated_when_upright(self):
+        # ~5% aspect deviation with clean right-angle corners: plausibly a
+        # slightly off-overhead camera, which perspective_correct fixes.
+        # Strict without the tilt_ok flag, relaxed with it.
+        squished = quad(630 * 0.95, 880)
+        assert not detect.check_aspect_ratio(squished, CAP_CFG).passed
+        assert detect.check_aspect_ratio(squished, CAP_CFG, tilt_ok=True).passed
+
+    def test_gross_deviation_blocked_even_when_upright(self):
+        # The real minAreaRect card+background box measured 28% off — must
+        # stay blocked no matter how clean its corners are.
+        assert not detect.check_aspect_ratio(quad(515, 1000), CAP_CFG, tilt_ok=True).passed
 
 
 class TestTiltGate:
