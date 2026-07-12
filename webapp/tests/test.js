@@ -106,6 +106,38 @@ function assert(cond, message) {
   assert(!content.includes("might be worse"), "no warning banner when all capture-quality gates pass");
 }
 
+// --- Test 1e: a vision judgment renders with its grade, confidence, and judging model ---
+// The model name matters now that two providers (Claude / Gemini) can produce
+// judgments — comparing runs requires knowing which model said what. Older
+// reports lack the field, so rendering must also work without it.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.surface.front.vision_judgment = {
+    surface_grade: 8,
+    confidence: "medium",
+    defects_found: ["light scratch near the top edge"],
+    holo_regions_ignored: false,
+    reasoning: "Minor wear.",
+    model: "gemini-flash-latest",
+  };
+  report.surface.back.vision_judgment = {
+    surface_grade: 9,
+    confidence: "high",
+    defects_found: [],
+    holo_regions_ignored: true,
+    reasoning: "Clean.",
+    // no model field — older report shape must still render
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("vision judgment: grade 8"), "front vision judgment grade renders");
+  assert(content.includes("gemini-flash-latest"), "the judging model name is shown");
+  assert(content.includes("light scratch near the top edge"), "found defects are listed");
+  assert(content.includes("vision judgment: grade 9"), "a judgment without a model field still renders");
+}
+
 // --- Test 1d: unmeasurable centering (borderless/full-art card) renders honestly ---
 // Real case: a full-art promo produced a fake "89/11 grade 3" because the
 // border detector returned argmax-of-noise. The server now marks such sides

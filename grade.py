@@ -7,9 +7,10 @@ Usage:
                      [--output-dir output] [--thresholds calibration/thresholds.json]
 
 Surface vision review runs automatically when --surface is passed, using
-whatever Claude API credentials are already configured (ANTHROPIC_API_KEY or
-an `ant auth login` profile). If no credentials are available, it's skipped
-with a note in the report — the rest of the pipeline still runs.
+whichever vision-model credentials are configured: ANTHROPIC_API_KEY (or an
+`ant auth login` profile) for Claude, else GEMINI_API_KEY for Gemini's free
+tier. If no credentials are available, it's skipped with a note in the
+report — the rest of the pipeline still runs.
 
 The per-card orchestration lives in grade_card() so calibration/calibrate.py
 can reuse it to batch-run the pipeline against cards with known PSA grades.
@@ -24,7 +25,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
-import anthropic
 import cv2
 
 from llm import vision
@@ -129,15 +129,15 @@ def run_surface_side(label: str, angled_path: Path, card_dir: Path, thresholds: 
     result_dict = result.to_dict()
     result_dict["aligned"] = True
     try:
-        judgment = vision.judge_surface(
+        judgment, model_used = vision.judge_surface(
             surf_dir / f"{label}_aligned.png", surf_dir / f"{label}_defect_map.png"
         )
-    except anthropic.AnthropicError as e:
+    except vision.VisionUnavailable as e:
         _log(verbose, f"  {label} vision review skipped: {e}")
         result_dict["vision_judgment"] = None
     else:
-        result_dict["vision_judgment"] = judgment.model_dump()
-        _log(verbose, f"  {label} vision judgment: surface grade={judgment.surface_grade} (confidence={judgment.confidence})")
+        result_dict["vision_judgment"] = {**judgment.model_dump(), "model": model_used}
+        _log(verbose, f"  {label} vision judgment ({model_used}): surface grade={judgment.surface_grade} (confidence={judgment.confidence})")
         for defect in judgment.defects_found:
             _log(verbose, f"    - {defect}")
 

@@ -105,13 +105,22 @@ defect map — not a grade by itself. Telling a real scratch apart from holo shi
 normal print linework reliably needs actual visual judgment, which is Stage 4.5.
 
 ### Stage 4.5 — Vision-model judgment (`llm/vision.py`)
-Sends the raking-light crop plus the algorithmic defect map to Claude (currently
-`claude-opus-4-8`) with PSA-style surface grading standards in the prompt, and asks for
-a structured judgment (grade estimate, confidence, list of defects found, whether holo
-was present). Runs automatically whenever `--surface` photos are provided and Claude
-API credentials are available (`ANTHROPIC_API_KEY` env var, or an `ant auth login`
-profile); if no credentials are configured, this step is skipped with a note in the
-report and the rest of the pipeline still runs normally.
+Sends the raking-light crop plus the algorithmic defect map to a vision model with
+PSA-style surface grading standards in the prompt, and asks for a structured judgment
+(grade estimate, confidence, list of defects found, whether holo was present). Two
+providers, selected by whichever API key is configured:
+
+- **Claude** (`claude-opus-4-8`) — `ANTHROPIC_API_KEY` env var, or an `ant auth login`
+  profile. Takes precedence when both keys are set.
+- **Gemini** (`gemini-flash-latest`) — `GEMINI_API_KEY` env var. The free tier from
+  [aistudio.google.com](https://aistudio.google.com) works (1,500 requests/day; a
+  graded card uses 2), no payment card needed. Set the variable when launching the
+  webapp server: `GEMINI_API_KEY=... .venv/bin/python -m uvicorn webapp.main:app ...`
+
+Both return the same structured `SurfaceJudgment`, and the report records which model
+produced each judgment. If no credentials are configured, this step is skipped with a
+note in the report and the rest of the pipeline still runs normally — a rate-limited
+or failed call is likewise just "review skipped", never a failed grade.
 
 ### Stage 5 — Grade assembly (`pipeline/scoring.py`)
 Combines the three sub-grades (centering, corners/edges, surface) into one overall
@@ -240,7 +249,7 @@ pipeline/
   surface.py                 Stage 4 — scratch/print-line defect visualization
   scoring.py                 Stage 5 — grade assembly (heuristic or fitted weights)
 llm/
-  vision.py                  Stage 4.5 — Claude vision call for surface judgment
+  vision.py                  Stage 4.5 — vision-model surface judgment (Claude or Gemini)
 webapp/
   main.py                    FastAPI app (upload validation, job endpoints)
   jobs.py                    In-memory job queue, temp-dir lifecycle, progress messages

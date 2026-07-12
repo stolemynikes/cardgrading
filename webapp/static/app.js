@@ -835,7 +835,7 @@ function surfaceSideHTML(sideKey, label, sideData, images) {
       : `<div class="muted">no defects flagged</div>`;
     vjHtml = `<div class="vision-judgment">
       <span class="grade-pill" style="color:${gradeColor(vj.surface_grade)}">vision judgment: grade ${vj.surface_grade}</span>
-      <span class="muted">(confidence: ${escapeHtml(vj.confidence)})</span>
+      <span class="muted">(confidence: ${escapeHtml(vj.confidence)}${vj.model ? ", " + escapeHtml(vj.model) : ""})</span>
       ${defects}
     </div>`;
   } else {
