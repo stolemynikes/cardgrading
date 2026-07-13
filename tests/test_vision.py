@@ -107,6 +107,40 @@ class TestFlatJudgment:
         assert any("back" in i for i in items if isinstance(i, str))
 
 
+class TestIdentifyCard:
+    IDENT = vision.CardIdentification(
+        card_name="Gothitelle",
+        set_name="SVP Black Star Promos",
+        collector_number="211",
+        game="pokemon",
+        is_full_art=True,
+        is_holo=True,
+        front_image_side="front",
+        back_image_side="back",
+        looks_like_same_card=True,
+        confidence="high",
+    )
+
+    def test_identify_uses_provider_selection(self, monkeypatch):
+        clear_keys(monkeypatch)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch.object(vision, "_judge_gemini", return_value=self.IDENT) as gemini:
+            ident, model = vision.identify_card(Path("front.png"), Path("back.png"))
+        gemini.assert_called_once()
+        assert model == vision.GEMINI_MODEL
+        assert ident.is_full_art is True
+
+    def test_identify_sends_both_images_and_schema(self, monkeypatch):
+        clear_keys(monkeypatch)
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+        with patch.object(vision, "_judge_gemini", return_value=self.IDENT) as gemini:
+            vision.identify_card(Path("front.png"), Path("back.png"))
+        system, items, schema = gemini.call_args[0]
+        assert schema is vision.CardIdentification
+        assert sum(1 for i in items if isinstance(i, Path)) == 2
+        assert "FRONT" in " ".join(i for i in items if isinstance(i, str))
+
+
 class TestFailureNormalization:
     def test_gemini_error_surfaces_as_vision_unavailable(self, monkeypatch, tmp_path):
         # A real (non-mocked) _judge_gemini call with a bogus key must come

@@ -27,6 +27,7 @@ from typing import Callable
 
 import cv2
 
+import market
 from llm import vision
 from pipeline import centering, corners_edges, detect, scoring, surface
 
@@ -162,8 +163,8 @@ def grade_card(
     of cards (see calibration/calibrate.py).
 
     on_stage, if given, is called with a short stage-name string ("detect",
-    "centering", "corners_edges", "surface", "vision_flat", "scoring",
-    "done") right before
+    "identify", "centering", "corners_edges", "surface", "vision_flat",
+    "scoring", "done") right before
     each stage starts — for callers that want progress reporting (the
     webapp's job polling) without parsing verbose print output. Stage names
     are deliberately UI-agnostic; the caller maps them to human-readable text.
@@ -215,6 +216,36 @@ def grade_card(
         report["grade_estimate"] = None
         (output_dir / "report.json").write_text(json.dumps(report, indent=2))
         return report
+
+    # Identify-first, like the commercial AI graders: know what the card IS
+    # before measuring it. One vision call covers identification plus a
+    # sanity check of the capture pair itself (same side shot twice, front/
+    # back swapped, mismatched cards). Optional like every vision stage.
+    stage("identify")
+    report["card_id"] = None
+    report["market"] = None
+    try:
+        ident, ident_model = vision.identify_card(
+            output_dir / "front_aligned.png", output_dir / "back_aligned.png"
+        )
+    except vision.VisionUnavailable as e:
+        _log(verbose, f"\n[identify] skipped: {e}")
+    else:
+        report["card_id"] = {**ident.model_dump(), "model": ident_model}
+        _log(
+            verbose,
+            f"\n[identify] {ident.card_name} — {ident.set_name or 'set unknown'}"
+            f"{' #' + ident.collector_number if ident.collector_number else ''}"
+            f" (full-art={ident.is_full_art}, holo={ident.is_holo}, confidence={ident.confidence})",
+        )
+        if ident.front_image_side == "back" or ident.back_image_side == "front":
+            _log(verbose, "  WARNING: the photos may be swapped or show the same side twice")
+        if not ident.looks_like_same_card:
+            _log(verbose, "  WARNING: front and back photos may be different cards")
+        report["market"] = market.lookup_prices(ident.card_name, ident.collector_number, ident.set_name)
+        if report["market"]:
+            m = report["market"]
+            _log(verbose, f"  market match: {m['matched_name']} ({m['matched_set']} #{m['matched_number']}) prices={m['prices']}")
 
     stage("centering")
     result = centering.measure_centering(front_result.warped, back_result.warped, thresholds)

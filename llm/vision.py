@@ -99,6 +99,33 @@ class FlatJudgment(BaseModel):
     reasoning: str = Field(description="Brief explanation of the grades, 2-4 sentences")
 
 
+IDENTIFY_STANDARDS = """You are identifying a trading card from two perspective-corrected photos \
+that are supposed to be the FRONT and the BACK of the same physical card, in that order.
+
+Identify the card as precisely as you can (name, set, collector number). Also assess:
+- Which side each photo actually shows — users sometimes shoot the same side twice or swap the order.
+- Whether the two photos plausibly belong to the same physical card (matching game, era, wear).
+- Whether the card is a full-art/borderless style (artwork running to the card edges, no plain \
+printed border) — this matters because border-based centering measurement doesn't apply to such cards.
+- Whether the card has holographic foil.
+
+If you can't identify the exact card, give your best guess and say confidence is low. Never invent \
+a collector number you can't see."""
+
+
+class CardIdentification(BaseModel):
+    card_name: str = Field(description="Card name, e.g. 'Gothitelle'; best guess if unsure")
+    set_name: str = Field(description="Set name, e.g. 'SVP Black Star Promos'; empty string if unknown")
+    collector_number: str = Field(description="Collector number as printed, e.g. '211'; empty string if not visible")
+    game: str = Field(description="Which game: pokemon, magic, yugioh, sports, other")
+    is_full_art: bool = Field(description="True if the artwork runs to the card edges (borderless/full-art style)")
+    is_holo: bool = Field(description="True if the card has holographic foil")
+    front_image_side: str = Field(description="Which side the FIRST photo actually shows: front, back, or unclear")
+    back_image_side: str = Field(description="Which side the SECOND photo actually shows: front, back, or unclear")
+    looks_like_same_card: bool = Field(description="Whether the two photos plausibly show the same physical card")
+    confidence: str = Field(description="low, medium, or high confidence in the identification")
+
+
 def _encode_image(path: Path) -> tuple[str, str]:
     media_type = "image/png" if path.suffix.lower() == ".png" else "image/jpeg"
     data = base64.standard_b64encode(path.read_bytes()).decode("utf-8")
@@ -209,6 +236,27 @@ def judge_surface(crop_path: Path, defect_map_path: Path) -> tuple[SurfaceJudgme
             "Judge this card region's surface condition.",
         ],
         SurfaceJudgment,
+    )
+
+
+def identify_card(front_aligned: Path, back_aligned: Path) -> tuple[CardIdentification, str]:
+    """Identify the card from the two aligned captures, in one call.
+
+    Also sanity-checks the capture pair itself: which side each photo really
+    shows (catches shooting the same side twice / swapping front and back)
+    and whether the pair plausibly belongs to one physical card. Same error
+    contract as judge_surface.
+    """
+    return _call_structured(
+        IDENTIFY_STANDARDS,
+        [
+            "Photo 1 — supposed to be the card's FRONT:",
+            front_aligned,
+            "Photo 2 — supposed to be the card's BACK:",
+            back_aligned,
+            "Identify the card and assess the photo pair.",
+        ],
+        CardIdentification,
     )
 
 

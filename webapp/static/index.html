@@ -113,6 +113,15 @@
     </section>
   </main>
 
+  <!-- Fullscreen image viewer: tap any report image to inspect it at native
+       resolution (the report images are 1500x2100 — plenty of real detail) -->
+  <div id="lightbox" class="lightbox" hidden>
+    <button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close">&times;</button>
+    <div id="lightbox-stage" class="lightbox-stage">
+      <img id="lightbox-img" alt="Zoomed report image">
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -796,38 +796,45 @@ function subgradeTile(label, grade) {
   </div>`;
 }
 
-function centeringSideHTML(label, sideData, overlayImg) {
+function centeringSideHTML(label, sideData, overlayImg, knownFullArt = false) {
   // measurable === false: the border-boundary detection had no confident
   // signal on this side (borderless/full-art card, or the border isn't
   // visible in this capture). Showing the raw ratios would present
   // argmax-of-noise as real measurements. Older reports lack the flag —
   // treat missing as measurable.
   if (sideData.measurable === false) {
+    const note = knownFullArt
+      ? "Couldn't measure — this is a full-art/borderless card, which has no printed border to measure. Expected, not a capture problem."
+      : "Couldn't measure — borderless/full-art card, or the border isn't visible in this capture.";
     return `<div class="centering-card">
       <div class="centering-card-header">${label}
         <span class="grade-pill" style="color:${gradeColor(null)}">n/a</span>
       </div>
       ${overlayImg ? `<img class="overlay-img" src="${overlayImg}" alt="${label} centering overlay">` : ""}
-      <div class="muted" style="font-size:0.82rem">Couldn't measure — borderless/full-art card, or the border isn't visible in this capture.</div>
+      <div class="muted" style="font-size:0.82rem">${note}</div>
     </div>`;
   }
+  // Mark the axis that set this side's grade (TAG's DINGS idea: show what
+  // actually drove the number, not just the numbers).
+  const worseAxis = sideData.horizontal.grade <= sideData.vertical.grade ? "h" : "v";
+  const ding = `<span class="ding-marker" title="This axis set the grade">drove the grade</span>`;
   return `<div class="centering-card">
     <div class="centering-card-header">${label}
       <span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}</span>
     </div>
     ${overlayImg ? `<img class="overlay-img" src="${overlayImg}" alt="${label} centering overlay">` : ""}
     <div class="axis-row"><span class="axis-label">H</span><span class="mono">${escapeHtml(sideData.horizontal.ratio)}</span>
-      <span class="grade-pill-sm">g${sideData.horizontal.grade}</span></div>
+      <span class="grade-pill-sm">g${sideData.horizontal.grade}</span>${worseAxis === "h" ? ding : ""}</div>
     <div class="axis-row"><span class="axis-label">V</span><span class="mono">${escapeHtml(sideData.vertical.ratio)}</span>
-      <span class="grade-pill-sm">g${sideData.vertical.grade}</span></div>
+      <span class="grade-pill-sm">g${sideData.vertical.grade}</span>${worseAxis === "v" ? ding : ""}</div>
   </div>`;
 }
 
-function regionTileHTML(bareKey, prefixedKey, shortLabel, sideKey, regionData, images) {
+function regionTileHTML(bareKey, prefixedKey, shortLabel, sideKey, regionData, images, isDing) {
   const img = images[`${sideKey}_${prefixedKey}`];
-  return `<div class="region-tile">
+  return `<div class="region-tile${isDing ? " region-tile--ding" : ""}">
     ${img ? `<img class="region-thumb" src="${img}" alt="${shortLabel}">` : ""}
-    <div class="region-label">${shortLabel}</div>
+    <div class="region-label">${shortLabel}${isDing ? ` <span class="ding-marker" title="Worst region — set this side's grade">!</span>` : ""}</div>
     <div class="mono region-pct" style="color:${gradeColor(regionData.grade)}">${regionData.whitening_pct.toFixed(2)}%</div>
   </div>`;
 }
@@ -846,12 +853,17 @@ const EDGE_DEFS = [
 ];
 
 function cornersEdgesSideHTML(label, sideKey, sideData, images) {
+  // TAG's DINGS idea: mark the region(s) that actually set this side's
+  // grade — the worst grade among all 8 corners/edges — so the eye goes
+  // straight to what matters instead of scanning 8 equal-looking tiles.
+  const allRegions = [...Object.values(sideData.corners), ...Object.values(sideData.edges)];
+  const worst = Math.min(...allRegions.map((r) => r.grade));
   let tiles = "";
   for (const [bare, prefixed, short] of CORNER_DEFS) {
-    tiles += regionTileHTML(bare, prefixed, short, sideKey, sideData.corners[bare], images);
+    tiles += regionTileHTML(bare, prefixed, short, sideKey, sideData.corners[bare], images, sideData.corners[bare].grade === worst);
   }
   for (const [bare, prefixed, short] of EDGE_DEFS) {
-    tiles += regionTileHTML(bare, prefixed, short, sideKey, sideData.edges[bare], images);
+    tiles += regionTileHTML(bare, prefixed, short, sideKey, sideData.edges[bare], images, sideData.edges[bare].grade === worst);
   }
   return `<div class="ce-card">
     <div class="centering-card-header">${label}
@@ -926,6 +938,63 @@ function captureWarningHTML(report) {
     .join("<br>")}</div>`;
 }
 
+// Card identity header + capture-pair sanity warnings, from the vision
+// identify stage. The commercial graders all identify-first (what card is
+// this?) before grading; ours also cross-checks the photo pair itself.
+function cardIdHTML(report) {
+  const id = report.card_id;
+  if (!id) return "";
+  let html = "";
+  if (id.front_image_side === "back" || id.back_image_side === "front") {
+    html += `<div class="banner banner-warn">The two photos may be swapped or show the same side twice — check before trusting this report.</div>`;
+  }
+  if (id.looks_like_same_card === false) {
+    html += `<div class="banner banner-warn">The front and back photos may not be the same card.</div>`;
+  }
+  const badges = [];
+  if (id.is_full_art) badges.push("full-art");
+  if (id.is_holo) badges.push("holo");
+  const setBits = [id.set_name, id.collector_number ? `#${id.collector_number}` : ""].filter(Boolean).join(" ");
+  html += `<div class="card-identity">
+    <span class="card-name">${escapeHtml(id.card_name)}</span>
+    ${setBits ? `<span class="muted">${escapeHtml(setBits)}</span>` : ""}
+    ${badges.map((b) => `<span class="indicative-tag">${b}</span>`).join("")}
+    <span class="muted card-id-conf">(id confidence: ${escapeHtml(id.confidence)}${id.model ? ", " + escapeHtml(id.model) : ""})</span>
+  </div>`;
+  return html;
+}
+
+// Raw-card market value for the identified card — the "is this worth
+// submitting" context. Raw price only; graded value varies with the grade.
+function marketHTML(report) {
+  const m = report.market;
+  if (!m || !m.prices || !Object.keys(m.prices).length) return "";
+  const parts = Object.entries(m.prices).map(([k, v]) => `${escapeHtml(k.replace(/_/g, " "))}: $${Number(v).toFixed(2)}`);
+  return `<div class="market-line muted">Raw market value — ${parts.join(" · ")}
+    <span class="mono">(${escapeHtml(m.matched_name)}, ${escapeHtml(m.matched_set)} #${escapeHtml(m.matched_number)}, ${escapeHtml(m.source)})</span>
+    — ungraded price; graded value varies</div>`;
+}
+
+// NXR-style dual-agreement check, adapted: our two independent assessors are
+// the pixel measurements and the AI flat-shot opinion. Strong disagreement
+// on corners/edges doesn't block anything — it's surfaced so neither number
+// gets blind trust.
+function disagreementHTML(report) {
+  if (!report.vision_flat || !report.corners_edges) return "";
+  const parts = [];
+  for (const [side, label] of [["front", "Front"], ["back", "Back"]]) {
+    const algo = report.corners_edges[side] && report.corners_edges[side].grade;
+    const vj = report.vision_flat[side];
+    if (algo == null || !vj) continue;
+    const ai = Math.min(vj.corners_grade, vj.edges_grade);
+    if (Math.abs(algo - ai) >= 3) {
+      parts.push(`${label}: measured ${algo} vs AI opinion ${ai}`);
+    }
+  }
+  if (!parts.length) return "";
+  return `<div class="banner banner-warn">The pixel measurements and the AI opinion disagree strongly on corners/edges (${parts.join("; ")}) — inspect the images yourself before trusting either.</div>`;
+}
+
 function buildReportHTML(report, images) {
   const ge = report.grade_estimate;
   const centering = report.centering;
@@ -933,6 +1002,8 @@ function buildReportHTML(report, images) {
   const surface = report.surface;
 
   let html = captureWarningHTML(report);
+  html += cardIdHTML(report);
+  html += disagreementHTML(report);
 
   html += `<div class="grade-header">
     <div class="overall-grade" style="color:${gradeColor(ge.overall_grade_rounded)}">${ge.overall_grade_rounded}</div>
@@ -942,16 +1013,19 @@ function buildReportHTML(report, images) {
     </div>
   </div>`;
 
+  html += marketHTML(report);
+
   html += `<div class="subgrade-row">
     ${subgradeTile("Centering", ge.centering_grade)}
     ${subgradeTile("Corners/Edges", ge.corners_edges_grade)}
     ${subgradeTile("Surface", ge.surface_grade)}
   </div>`;
 
+  const frontFullArt = !!(report.card_id && report.card_id.is_full_art);
   html += `<section class="report-section">
     <h2>Centering</h2>
     <div class="side-by-side">
-      ${centeringSideHTML("Front", centering.front, images.front_centering_overlay)}
+      ${centeringSideHTML("Front", centering.front, images.front_centering_overlay, frontFullArt)}
       ${centeringSideHTML("Back", centering.back, images.back_centering_overlay)}
     </div>
   </section>`;
@@ -1018,6 +1092,110 @@ function wireSurfaceSliders() {
 // ---- actions: download / reset ----
 document.getElementById("download-btn").addEventListener("click", downloadReport);
 document.getElementById("reset-btn").addEventListener("click", resetApp);
+
+// ---- fullscreen image viewer (TAG "Card Vision" idea, phone-sized) ----
+// The report renders 1500x2100 images at thumbnail size; tapping one opens
+// it fullscreen with pinch-zoom, one-finger pan, and double-tap 1x/3x.
+// Pointer events cover both touch and mouse. In-app only — the downloaded
+// HTML export keeps plain images.
+let lightboxScale = 1;
+let lightboxTx = 0;
+let lightboxTy = 0;
+const activePointers = new Map();
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+let lastTapTime = 0;
+
+function applyLightboxTransform() {
+  const img = document.getElementById("lightbox-img");
+  img.style.transform = `translate(${lightboxTx}px, ${lightboxTy}px) scale(${lightboxScale})`;
+}
+
+function openLightbox(src) {
+  const box = document.getElementById("lightbox");
+  const img = document.getElementById("lightbox-img");
+  lightboxScale = 1;
+  lightboxTx = 0;
+  lightboxTy = 0;
+  img.src = src;
+  applyLightboxTransform();
+  box.hidden = false;
+}
+
+function closeLightbox() {
+  document.getElementById("lightbox").hidden = true;
+  document.getElementById("lightbox-img").src = "";
+  activePointers.clear();
+}
+
+document.getElementById("report-content").addEventListener("click", (e) => {
+  const img = e.target.closest("img");
+  if (!img || !img.src) return;
+  openLightbox(img.src);
+});
+document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
+
+const lightboxStage = document.getElementById("lightbox-stage");
+
+lightboxStage.addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    const [a, b] = [...activePointers.values()];
+    pinchStartDist = Math.hypot(a.x - b.x, a.y - b.y);
+    pinchStartScale = lightboxScale;
+  } else if (activePointers.size === 1) {
+    const now = Date.now();
+    if (now - lastTapTime < 300) {
+      // double-tap: toggle 1x <-> 3x around the tap point
+      if (lightboxScale > 1.5) {
+        lightboxScale = 1;
+        lightboxTx = 0;
+        lightboxTy = 0;
+      } else {
+        lightboxScale = 3;
+      }
+      applyLightboxTransform();
+    }
+    lastTapTime = now;
+  }
+});
+
+lightboxStage.addEventListener("pointermove", (e) => {
+  if (!activePointers.has(e.pointerId)) return;
+  const prev = activePointers.get(e.pointerId);
+  activePointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (activePointers.size === 2) {
+    const [a, b] = [...activePointers.values()];
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    if (pinchStartDist > 0) {
+      lightboxScale = Math.max(1, Math.min(8, pinchStartScale * (dist / pinchStartDist)));
+      applyLightboxTransform();
+    }
+  } else if (activePointers.size === 1 && lightboxScale > 1) {
+    lightboxTx += e.clientX - prev.x;
+    lightboxTy += e.clientY - prev.y;
+    applyLightboxTransform();
+  }
+});
+
+function lightboxPointerEnd(e) {
+  activePointers.delete(e.pointerId);
+  if (activePointers.size < 2) pinchStartDist = 0;
+  if (lightboxScale <= 1.01) {
+    lightboxScale = 1;
+    lightboxTx = 0;
+    lightboxTy = 0;
+    applyLightboxTransform();
+  }
+}
+lightboxStage.addEventListener("pointerup", lightboxPointerEnd);
+lightboxStage.addEventListener("pointercancel", lightboxPointerEnd);
+
+// tapping the dimmed backdrop (not the image) closes, when not zoomed
+lightboxStage.addEventListener("click", (e) => {
+  if (e.target === lightboxStage && lightboxScale <= 1.01) closeLightbox();
+});
 
 async function downloadReport() {
   if (!window.__lastReport) return;

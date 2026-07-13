@@ -24,6 +24,7 @@ JOB_TTL_SECONDS = 15 * 60
 
 STAGE_MESSAGES = {
     "detect": "Detecting card…",
+    "identify": "Identifying card…",
     "centering": "Measuring centering…",
     "corners_edges": "Analyzing corners & edges…",
     "surface": "Mapping surface…",

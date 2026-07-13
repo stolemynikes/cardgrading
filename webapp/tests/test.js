@@ -169,6 +169,107 @@ function assert(cond, message) {
   assert(content.includes("gemini-flash-latest"), "judging model shown");
 }
 
+// --- Test 1g: card identification header, pair warnings, market value, DINGS, disagreement, lightbox ---
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.card_id = {
+    card_name: "Gothitelle", set_name: "SVP Black Star Promos", collector_number: "211",
+    game: "pokemon", is_full_art: true, is_holo: true,
+    front_image_side: "front", back_image_side: "back", looks_like_same_card: true,
+    confidence: "high", model: "gemini-flash-latest",
+  };
+  report.market = {
+    matched_name: "Gothitelle", matched_set: "SVP Black Star Promos", matched_number: "211",
+    prices: { tcgplayer_holofoil: 3.21, cardmarket_trend: 2.8 },
+    image_url: "", source: "pokemontcg.io",
+  };
+  // full-art + unmeasurable front centering -> "expected" note variant
+  report.centering.front.measurable = false;
+  report.centering.front.grade = null;
+  dom.window.handleReport(report, data.images);
+  const doc = dom.window.document;
+  let content = doc.getElementById("report-content").innerHTML;
+
+  assert(content.includes("Gothitelle"), "card name shown in the report header");
+  assert(content.includes("SVP Black Star Promos"), "set name shown");
+  assert(content.includes("full-art") && content.includes("holo"), "full-art and holo badges shown");
+  assert(content.includes("Raw market value"), "market value line renders");
+  assert(content.includes("$3.21"), "a tcgplayer price is shown");
+  assert(content.includes("graded value varies"), "market line carries the raw-price caveat");
+  assert(!content.includes("may be swapped"), "no swap warning when sides check out");
+  assert(
+    content.includes("Expected, not a capture problem"),
+    "full-art + unmeasurable centering explains it's expected, not a bad capture"
+  );
+
+  // DINGS: exactly the worst region(s) get the marker. Compute expected from fixture.
+  const ceFront = report.corners_edges.front;
+  const regions = [...Object.values(ceFront.corners), ...Object.values(ceFront.edges)];
+  const worst = Math.min(...regions.map((r) => r.grade));
+  const expectedDings = regions.filter((r) => r.grade === worst).length +
+    [...Object.values(report.corners_edges.back.corners), ...Object.values(report.corners_edges.back.edges)]
+      .filter((r, _, arr) => r.grade === Math.min(...arr.map((x) => x.grade))).length;
+  const dingTiles = (content.match(/region-tile--ding/g) || []).length;
+  assert(dingTiles === expectedDings, `DINGS markers land on exactly the worst regions (expected ${expectedDings}, got ${dingTiles})`);
+  assert(content.includes("drove the grade"), "centering worse-axis marker present");
+
+  // Lightbox: clicking a report image opens it fullscreen; close button closes.
+  const box = doc.getElementById("lightbox");
+  assert(box.hidden === true, "lightbox starts hidden");
+  const anyImg = doc.querySelector("#report-content img");
+  anyImg.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  assert(box.hidden === false, "clicking a report image opens the lightbox");
+  assert(doc.getElementById("lightbox-img").src === anyImg.src, "lightbox shows the clicked image");
+  doc.getElementById("lightbox-close").dispatchEvent(new dom.window.MouseEvent("click", { bubbles: true }));
+  assert(box.hidden === true, "close button hides the lightbox");
+}
+
+// --- Test 1h: pair-sanity warnings and the measurements-vs-AI disagreement banner ---
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.card_id = {
+    card_name: "Pangoro", set_name: "", collector_number: "", game: "pokemon",
+    is_full_art: false, is_holo: false,
+    front_image_side: "back", back_image_side: "back", looks_like_same_card: false,
+    confidence: "medium", model: "gemini-flash-latest",
+  };
+  // algorithmic front grade 3 vs AI opinion 8 -> disagreement (delta 5)
+  report.corners_edges.front.grade = 3;
+  report.vision_flat = {
+    front: { corners_grade: 8, edges_grade: 9, surface_grade: 9, confidence: "high", defects_found: [], reasoning: "", model: "m" },
+    back: { corners_grade: report.corners_edges.back.grade, edges_grade: report.corners_edges.back.grade,
+            surface_grade: 9, confidence: "high", defects_found: [], reasoning: "", model: "m" },
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("may be swapped"), "swapped/duplicate-side warning shows");
+  assert(content.includes("may not be the same card"), "different-cards warning shows");
+  assert(content.includes("disagree strongly"), "disagreement banner shows for a >=3 grade delta");
+  assert(content.includes("measured 3 vs AI opinion 8"), "disagreement banner names both numbers");
+}
+
+// --- Test 1i: small disagreement stays quiet; no card_id/market renders like before ---
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.vision_flat = {
+    front: { corners_grade: report.corners_edges.front.grade + 1, edges_grade: report.corners_edges.front.grade + 2,
+             surface_grade: 9, confidence: "high", defects_found: [], reasoning: "", model: "m" },
+    back: { corners_grade: report.corners_edges.back.grade, edges_grade: report.corners_edges.back.grade,
+            surface_grade: 9, confidence: "high", defects_found: [], reasoning: "", model: "m" },
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(!content.includes("disagree strongly"), "no disagreement banner for a small delta");
+  assert(!content.includes("card-identity"), "no identity header without card_id");
+  assert(!content.includes("Raw market value"), "no market line without market data");
+}
+
 // --- Test 1d: unmeasurable centering (borderless/full-art card) renders honestly ---
 // Real case: a full-art promo produced a fake "89/11 grade 3" because the
 // border detector returned argmax-of-noise. The server now marks such sides

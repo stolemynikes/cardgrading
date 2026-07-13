@@ -122,6 +122,28 @@ produced each judgment. If no credentials are configured, this step is skipped w
 note in the report and the rest of the pipeline still runs normally — a rate-limited
 or failed call is likewise just "review skipped", never a failed grade.
 
+The vision layer runs three optional judgments per grade (all same skip-on-failure
+contract, ~3 calls total — Gemini's free tier allows 10/minute, 1,500/day):
+
+- **Identify** (`identify_card`) — what card is this (name/set/number, full-art, holo),
+  plus a sanity check of the photo pair itself: which side each photo actually shows
+  (catches shooting the same side twice or swapping front/back) and whether the pair
+  plausibly belongs to one physical card. A confirmed full-art card turns the
+  "centering unmeasurable" note into "expected, not a capture problem". The identified
+  card also drives a market-price lookup (`market.py`, pokemontcg.io) shown in the
+  report as raw-card value context.
+- **Flat-shot opinion** (`judge_flat`) — an independent take on corners/edges wear and
+  an upper-bound surface estimate from each flat capture. On a 2-shot flow this fills
+  the surface sub-grade (labeled as flat-shot derived). When it disagrees with the
+  pixel measurements by 3+ grades, the report shows a caution banner rather than
+  silently trusting either.
+- **Raking-light surface judgment** (`judge_surface`) — the original Stage 4.5,
+  when angled shots are provided.
+
+The report UI also marks the grade-driving region on each side (the worst
+corner/edge, TAG's "DINGS" idea) and every report image opens in a fullscreen
+pinch-zoom viewer (in-app only; the downloaded HTML keeps plain images).
+
 ### Stage 5 — Grade assembly (`pipeline/scoring.py`)
 Combines the three sub-grades (centering, corners/edges, surface) into one overall
 estimate. Two ways this combination can happen:
@@ -242,6 +264,7 @@ cd webapp/tests && npm install && npm test # frontend: jsdom regression suite
 
 ```
 grade.py                    CLI entrypoint; grade_card() does the actual orchestration
+market.py                   Raw-card market price lookup (pokemontcg.io) for identified cards
 pipeline/
   detect.py                 Stage 1 — contour detection, perspective correction, quality gates
   centering.py               Stage 2 — border measurement, PSA tolerance grading
@@ -249,7 +272,7 @@ pipeline/
   surface.py                 Stage 4 — scratch/print-line defect visualization
   scoring.py                 Stage 5 — grade assembly (heuristic or fitted weights)
 llm/
-  vision.py                  Stage 4.5 — vision-model surface judgment (Claude or Gemini)
+  vision.py                  Vision judgments (Claude or Gemini): identify, flat opinion, surface
 webapp/
   main.py                    FastAPI app (upload validation, job endpoints)
   jobs.py                    In-memory job queue, temp-dir lifecycle, progress messages
