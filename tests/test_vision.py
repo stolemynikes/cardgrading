@@ -44,17 +44,17 @@ class TestProviderSelection:
     def test_gemini_key_selects_gemini(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=JUDGMENT) as gemini:
+        with patch.object(vision, "_judge_gemini", return_value=(JUDGMENT, vision.GEMINI_MODELS[0])) as gemini:
             judgment, model = vision.judge_surface(CROP, DEFECT_MAP)
         gemini.assert_called_once()
-        assert model == vision.GEMINI_MODEL
+        assert model == vision.GEMINI_MODELS[0]
 
     def test_google_api_key_alias_also_selects_gemini(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=JUDGMENT):
+        with patch.object(vision, "_judge_gemini", return_value=(JUDGMENT, vision.GEMINI_MODELS[0])):
             _, model = vision.judge_surface(CROP, DEFECT_MAP)
-        assert model == vision.GEMINI_MODEL
+        assert model == vision.GEMINI_MODELS[0]
 
     def test_anthropic_wins_when_both_keys_present(self, monkeypatch):
         clear_keys(monkeypatch)
@@ -89,16 +89,16 @@ class TestFlatJudgment:
     def test_judge_flat_uses_same_provider_selection(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=self.FLAT) as gemini:
+        with patch.object(vision, "_judge_gemini", return_value=(self.FLAT, vision.GEMINI_MODELS[0])) as gemini:
             judgment, model = vision.judge_flat(Path("aligned.png"), "front")
         gemini.assert_called_once()
-        assert model == vision.GEMINI_MODEL
+        assert model == vision.GEMINI_MODELS[0]
         assert judgment.corners_grade == 8
 
     def test_judge_flat_passes_flat_standards_and_schema(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=self.FLAT) as gemini:
+        with patch.object(vision, "_judge_gemini", return_value=(self.FLAT, vision.GEMINI_MODELS[0])) as gemini:
             vision.judge_flat(Path("aligned.png"), "back")
         system, items, schema = gemini.call_args[0]
         assert "flat" in system.lower()
@@ -124,16 +124,16 @@ class TestIdentifyCard:
     def test_identify_uses_provider_selection(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=self.IDENT) as gemini:
+        with patch.object(vision, "_judge_gemini", return_value=(self.IDENT, vision.GEMINI_MODELS[0])) as gemini:
             ident, model = vision.identify_card(Path("front.png"), Path("back.png"))
         gemini.assert_called_once()
-        assert model == vision.GEMINI_MODEL
+        assert model == vision.GEMINI_MODELS[0]
         assert ident.is_full_art is True
 
     def test_identify_sends_both_images_and_schema(self, monkeypatch):
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=self.IDENT) as gemini:
+        with patch.object(vision, "_judge_gemini", return_value=(self.IDENT, vision.GEMINI_MODELS[0])) as gemini:
             vision.identify_card(Path("front.png"), Path("back.png"))
         system, items, schema = gemini.call_args[0]
         assert schema is vision.CardIdentification

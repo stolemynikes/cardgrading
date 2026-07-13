@@ -28,9 +28,14 @@ import anthropic
 from pydantic import BaseModel, Field
 
 CLAUDE_MODEL = "claude-opus-4-8"
-# Stable alias that tracks the newest flash model — pinned previews
-# (e.g. gemini-3-flash-preview) get retired and would start 404ing.
-GEMINI_MODEL = "gemini-flash-latest"
+# Pinned models, tried in order; the next is tried on quota/availability
+# errors. Deliberately NOT the "gemini-flash-latest" alias: free-tier daily
+# quota is per-model, and the alias tracks the newest flash — which can be a
+# just-released model with a tiny preview quota (it resolved to a 20
+# requests/DAY model once, and every vision stage silently died mid-testing).
+# Established models carry the real free tier (hundreds/day), and the
+# fallback lives in a separate quota bucket.
+GEMINI_MODELS = ("gemini-2.5-flash", "gemini-3.1-flash-lite")
 
 
 class VisionUnavailable(Exception):
@@ -167,7 +172,9 @@ def _judge_claude(system: str, items: list, schema: type[BaseModel]) -> BaseMode
     return judgment
 
 
-def _judge_gemini(system: str, items: list, schema: type[BaseModel]) -> BaseModel:
+def _judge_gemini(system: str, items: list, schema: type[BaseModel]) -> tuple[BaseModel, str]:
+    """Returns (judgment, model_used) — models are tried in GEMINI_MODELS
+    order, moving on when one is quota-exhausted or unavailable."""
     # Imported lazily: google-genai is only needed when a Gemini key is
     # actually configured, so a missing/broken install can't take down the
     # no-AI code path.
@@ -187,23 +194,27 @@ def _judge_gemini(system: str, items: list, schema: type[BaseModel]) -> BaseMode
         else:
             contents.append(item)
 
-    try:
-        response = client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system,
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
-        )
-    except Exception as e:  # genai errors (auth, 429 rate limit, network) share no useful base with ours
-        raise VisionUnavailable(f"Gemini API error: {e}") from e
+    last_error: Exception | None = None
+    for model in GEMINI_MODELS:
+        try:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system,
+                    response_mime_type="application/json",
+                    response_schema=schema,
+                ),
+            )
+        except Exception as e:  # genai errors (auth, 429 rate limit, network) share no useful base with ours
+            last_error = e
+            continue
+        judgment = response.parsed
+        if isinstance(judgment, schema):
+            return judgment, model
+        last_error = VisionUnavailable(f"{model} did not return a parseable judgment")
 
-    judgment = response.parsed
-    if not isinstance(judgment, schema):
-        raise VisionUnavailable("Gemini did not return a parseable judgment")
-    return judgment
+    raise VisionUnavailable(f"Gemini API error: {last_error}") from last_error
 
 
 def _call_structured(system: str, items: list, schema: type[BaseModel]) -> tuple[BaseModel, str]:
@@ -211,7 +222,7 @@ def _call_structured(system: str, items: list, schema: type[BaseModel]) -> tuple
     if os.environ.get("ANTHROPIC_API_KEY"):
         return _judge_claude(system, items, schema), CLAUDE_MODEL
     if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
-        return _judge_gemini(system, items, schema), GEMINI_MODEL
+        return _judge_gemini(system, items, schema)
     # No env keys — the anthropic SDK may still find an `ant auth login`
     # profile; let it try, and normalize the failure if it can't.
     return _judge_claude(system, items, schema), CLAUDE_MODEL

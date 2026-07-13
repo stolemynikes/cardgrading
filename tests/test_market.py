@@ -76,6 +76,27 @@ class TestLookupPrices:
         assert result["matched_name"] == "Pangoro"  # fixture card, proves a later query ran
         assert 'number:' not in q.call_args_list[-1][0][0]["q"], "the successful query was the name-only fallback"
 
+    def test_exact_name_match_beats_substring_match(self):
+        # Real failure: querying "Latias" returned "Mega Latias ex" first
+        # (substring match + newest-release ordering), pricing a $0.30 card
+        # at $92. The exact-name result must win regardless of order.
+        mega_first = [
+            {"name": "Mega Latias ex", "number": "1", "set": {"name": "Newest Set"},
+             "tcgplayer": {"prices": {"holofoil": {"market": 92.83}}}},
+            {"name": "Latias", "number": "193", "set": {"name": "Fusion Strike"},
+             "tcgplayer": {"prices": {"normal": {"market": 0.18}}}},
+        ]
+        with patch.object(market, "_query", return_value=mega_first):
+            result = market.lookup_prices("Latias")
+        assert result["matched_name"] == "Latias"
+        assert result["prices"]["tcgplayer_normal"] == 0.18
+
+    def test_set_name_used_as_middle_fallback(self):
+        with patch.object(market, "_query", side_effect=[[], [], CARD_RESPONSE, ]) as q:
+            # number query fails to match, set query fails to match, name-only hits
+            market.lookup_prices("Pangoro", "999", "Astral Radiance")
+        assert 'set.name:"Astral Radiance"' in q.call_args_list[1][0][0]["q"]
+
     def test_transient_failure_retried(self):
         # One cold-cache timeout then success on the same query — the real
         # pokemontcg.io behavior that made lookups silently fail in full

@@ -112,9 +112,12 @@ providers, selected by whichever API key is configured:
 
 - **Claude** (`claude-opus-4-8`) — `ANTHROPIC_API_KEY` env var, or an `ant auth login`
   profile. Takes precedence when both keys are set.
-- **Gemini** (`gemini-flash-latest`) — `GEMINI_API_KEY` env var. The free tier from
-  [aistudio.google.com](https://aistudio.google.com) works (1,500 requests/day; a
-  graded card uses 2), no payment card needed. Set the variable when launching the
+- **Gemini** (`gemini-2.5-flash`, falling back to `gemini-3.1-flash-lite` on quota
+  errors — free-tier daily quota is per-model, so the fallback is a second bucket) —
+  `GEMINI_API_KEY` env var. The free tier from [aistudio.google.com](https://aistudio.google.com)
+  works, no payment card needed; a graded card uses ~3 calls. Deliberately not the
+  `gemini-flash-latest` alias: it can resolve to a just-released model with a tiny
+  preview quota (20/day, learned the hard way). Set the variable when launching the
   webapp server: `GEMINI_API_KEY=... .venv/bin/python -m uvicorn webapp.main:app ...`
 
 Both return the same structured `SurfaceJudgment`, and the report records which model

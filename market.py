@@ -56,27 +56,34 @@ def lookup_prices(card_name: str, collector_number: str = "", set_name: str = ""
     """Best-effort market prices for the identified card. None on any failure."""
     if not card_name:
         return None
-    # Exact-ish query first (name + number), then name-only as fallback —
-    # the vision model's set/number guesses are less reliable than the name.
+    # Most-precise query first, loosening step by step — the vision model's
+    # number/set guesses are less reliable than the name.
     queries = []
     number = _normalize_number(collector_number)
     if number:
         queries.append(f'name:"{card_name}" number:{number}')
+    if set_name:
+        queries.append(f'name:"{card_name}" set.name:"{set_name}"')
     queries.append(f'name:"{card_name}"')
 
     for q in queries:
         # Failures are per-query: a malformed precise query must not kill
-        # the name-only fallback (this exact bug shipped once — the model
-        # returned "193/264" and the whole lookup silently died).
+        # the fallbacks (this exact bug shipped once — the model returned
+        # "193/264" and the whole lookup silently died).
         cards = None
         for _ in range(ATTEMPTS_PER_QUERY):
             try:
-                cards = _query({"q": q, "pageSize": 5, "orderBy": "-set.releaseDate"})
+                cards = _query({"q": q, "pageSize": 10, "orderBy": "-set.releaseDate"})
                 break
             except Exception:
                 continue
         if cards:
-            card = cards[0]
+            # The API's name matching is substring-ish: querying "Latias"
+            # returns "Mega Latias ex" too, and release-date ordering put a
+            # $92 card first for a $0.30 one. An exact name match wins;
+            # only fall back to the API's first result if none exists.
+            exact = [c for c in cards if (c.get("name") or "").lower() == card_name.lower()]
+            card = exact[0] if exact else cards[0]
             return {
                 "matched_name": card.get("name", card_name),
                 "matched_set": (card.get("set") or {}).get("name", ""),
