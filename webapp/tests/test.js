@@ -270,6 +270,30 @@ function assert(cond, message) {
   assert(!content.includes("Raw market value"), "no market line without market data");
 }
 
+// --- Test 1j: per-axis centering — one measurable axis renders its ratio, the other shows n/a ---
+// Real case: a soft capture where one axis's boundary is genuinely invisible
+// (blue frame melting into blue swirl) while the other axis measures fine.
+// The old all-or-nothing rule hid the good measurement behind a blanket n/a.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.centering.back.horizontal.measurable = false;
+  report.centering.back.vertical.measurable = true;
+  report.centering.back.grade = report.centering.back.vertical.grade;
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+
+  assert(content.includes("n/a — boundary not visible"), "unmeasurable H axis shows n/a instead of noise numbers");
+  const backVRatio = report.centering.back.vertical.ratio;
+  assert(content.includes(backVRatio), "measurable V axis still shows its real ratio");
+  assert(!content.includes(`>${report.centering.back.horizontal.ratio}<`) ||
+         report.centering.back.horizontal.ratio === backVRatio,
+         "the unmeasurable H axis's noise ratio is not rendered");
+  assert(content.includes(`grade ${report.centering.back.grade}`), "side grade (from the measurable axis) is shown");
+  assert(!content.includes("Couldn't measure — borderless"), "no blanket couldn't-measure card when one axis measured");
+}
+
 // --- Test 1d: unmeasurable centering (borderless/full-art card) renders honestly ---
 // Real case: a full-art promo produced a fake "89/11 grade 3" because the
 // border detector returned argmax-of-noise. The server now marks such sides

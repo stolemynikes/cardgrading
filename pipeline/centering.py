@@ -25,6 +25,10 @@ class AxisCentering:
     side_b_pct: float
     ratio_str: str
     grade: int
+    # False when this axis's two boundaries couldn't be found confidently —
+    # the px/pct/grade values above are then argmax-of-noise and must not be
+    # shown as measurements.
+    measurable: bool = True
 
 
 @dataclass
@@ -52,6 +56,7 @@ class CenteringResult:
                 "side_b_pct": round(a.side_b_pct, 1),
                 "ratio": a.ratio_str,
                 "grade": a.grade,
+                "measurable": a.measurable,
             }
 
         return {
@@ -79,20 +84,30 @@ def _edge_profile(band: np.ndarray, canny_low: int, canny_high: int, axis: int) 
     return edges.sum(axis=axis).astype(np.float64)
 
 
-def _offset_from_start(profile: np.ndarray, search_px: int) -> int:
+# The perspective warp leaves a strong straight artifact line within the
+# first few pixels of every image edge (interpolation/background bleed).
+# It scores near-perfect boundary confidence and once produced a fake
+# "60/40 grade 10" from a top=3px/bottom=2px "border". No real card border
+# is thinner than ~0.5% of the card dimension, so the boundary search
+# starts past the artifact zone.
+def _edge_exclusion_px(dim: int) -> int:
+    return max(4, int(dim * 0.006))
+
+
+def _offset_from_start(profile: np.ndarray, search_px: int, start_at: int = 1) -> int:
     """Distance from index 0 to the strongest edge within the first search_px pixels."""
     search_px = min(search_px, len(profile) - 1)
-    window = profile[1:search_px]
+    window = profile[start_at:search_px]
     if window.size == 0:
         return search_px
-    return int(np.argmax(window)) + 1
+    return int(np.argmax(window)) + start_at
 
 
-def _offset_from_end(profile: np.ndarray, search_px: int) -> int:
+def _offset_from_end(profile: np.ndarray, search_px: int, start_at: int = 1) -> int:
     """Distance from the last index to the strongest edge within the last search_px pixels."""
     n = len(profile)
     search_px = min(search_px, n - 1)
-    window = profile[n - search_px:n - 1]
+    window = profile[n - search_px:n - start_at]
     if window.size == 0:
         return search_px
     idx = int(np.argmax(window))
@@ -160,8 +175,9 @@ def _measure_borders(
         gray[row_band[0]:row_band[1], :], cfg["canny_low"], cfg["canny_high"], axis=0
     )
     sp_w = int(w * margin)
-    left_px = _offset_from_start(col_profile, sp_w)
-    right_px = _offset_from_end(col_profile, sp_w)
+    excl_w = _edge_exclusion_px(w)
+    left_px = _offset_from_start(col_profile, sp_w, excl_w)
+    right_px = _offset_from_end(col_profile, sp_w, excl_w)
 
     # Vertical (top/bottom): sample a band around horizontal center, look
     # for the strongest horizontal edge (row-wise) near each side.
@@ -171,16 +187,17 @@ def _measure_borders(
         gray[:, col_band[0]:col_band[1]], cfg["canny_low"], cfg["canny_high"], axis=1
     )
     sp_h = int(h * margin)
-    top_px = _offset_from_start(row_profile, sp_h)
-    bottom_px = _offset_from_end(row_profile, sp_h)
+    excl_h = _edge_exclusion_px(h)
+    top_px = _offset_from_start(row_profile, sp_h, excl_h)
+    bottom_px = _offset_from_end(row_profile, sp_h, excl_h)
 
     n = len(col_profile)
     m = len(row_profile)
     confidence = {
-        "left": _peak_confidence(col_profile, slice(1, sp_w), band_h),
-        "right": _peak_confidence(col_profile, slice(n - sp_w, n - 1), band_h),
-        "top": _peak_confidence(row_profile, slice(1, sp_h), band_w),
-        "bottom": _peak_confidence(row_profile, slice(m - sp_h, m - 1), band_w),
+        "left": _peak_confidence(col_profile, slice(excl_w, sp_w), band_h),
+        "right": _peak_confidence(col_profile, slice(n - sp_w, n - excl_w), band_h),
+        "top": _peak_confidence(row_profile, slice(excl_h, sp_h), band_w),
+        "bottom": _peak_confidence(row_profile, slice(m - sp_h, m - excl_h), band_w),
     }
     return (float(left_px), float(right_px), float(top_px), float(bottom_px)), confidence
 
@@ -204,72 +221,105 @@ def _axis_centering(side_a_name: str, side_b_name: str, px_a: float, px_b: float
     return AxisCentering(side_a_name, side_b_name, px_a, px_b, pct_a, pct_b, ratio_str, grade)
 
 
-def draw_overlay(image: np.ndarray, axis_h: AxisCentering, axis_v: AxisCentering, measurable: bool = True) -> np.ndarray:
-    """Draw the detected border boundary lines over a copy of the image for debugging.
+def draw_overlay(image: np.ndarray, axis_h: AxisCentering, axis_v: AxisCentering) -> np.ndarray:
+    """Draw the detected border boundary lines over a copy of the image.
 
-    When the side was unmeasurable, don't draw the boundary lines at all —
-    they'd be argmax-of-noise positions that look authoritative but aren't.
+    Lines are drawn only for measurable axes — an unmeasurable axis's
+    positions are argmax-of-noise that would look authoritative but aren't.
     """
     overlay = image.copy()
     h, w = overlay.shape[:2]
-    if not measurable:
-        cv2.putText(overlay, "centering unmeasurable", (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-        return overlay
-    left, right = int(axis_h.side_a_px), int(axis_h.side_b_px)
-    top, bottom = int(axis_v.side_a_px), int(axis_v.side_b_px)
     color = (0, 255, 0)
     thickness = 3
-    cv2.line(overlay, (left, 0), (left, h), color, thickness)
-    cv2.line(overlay, (w - right, 0), (w - right, h), color, thickness)
-    cv2.line(overlay, (0, top), (w, top), color, thickness)
-    cv2.line(overlay, (0, h - bottom), (w, h - bottom), color, thickness)
-    text = f"H {axis_h.ratio_str} (g{axis_h.grade})  V {axis_v.ratio_str} (g{axis_v.grade})"
-    cv2.putText(overlay, text, (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+    parts = []
+    if axis_h.measurable:
+        left, right = int(axis_h.side_a_px), int(axis_h.side_b_px)
+        cv2.line(overlay, (left, 0), (left, h), color, thickness)
+        cv2.line(overlay, (w - right, 0), (w - right, h), color, thickness)
+        parts.append(f"H {axis_h.ratio_str} (g{axis_h.grade})")
+    else:
+        parts.append("H n/a")
+    if axis_v.measurable:
+        top, bottom = int(axis_v.side_a_px), int(axis_v.side_b_px)
+        cv2.line(overlay, (0, top), (w, top), color, thickness)
+        cv2.line(overlay, (0, h - bottom), (w, h - bottom), color, thickness)
+        parts.append(f"V {axis_v.ratio_str} (g{axis_v.grade})")
+    else:
+        parts.append("V n/a")
+    if not axis_h.measurable and not axis_v.measurable:
+        parts = ["centering unmeasurable"]
+    cv2.putText(overlay, "  ".join(parts), (20, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
     return overlay
 
 
-def _measure_side(image: np.ndarray, border_cfg: dict) -> tuple[tuple[float, float, float, float], dict[str, float], bool]:
+def _measure_side(
+    image: np.ndarray, border_cfg: dict
+) -> tuple[tuple[float, float, float, float], dict[str, float], bool, bool]:
     """Measure one side's borders, with an illumination-normalized retry.
 
-    Raw measurement first; if any boundary is below the confidence floor,
-    re-measure on a gamma+CLAHE-normalized image against a stricter bar
+    Raw measurement first; boundaries below the confidence floor get a
+    second chance on a gamma+CLAHE-normalized image against a stricter bar
     (normalization recovers dim captures but also inflates art texture).
-    Returns (widths, confidences, measurable).
+
+    Measurability is decided PER AXIS — horizontal needs left+right,
+    vertical needs top+bottom. A real capture measured V confidently while
+    H was genuinely invisible (a soft-focus shot of a card back, whose
+    blue-frame→blue-swirl left/right transition is the lowest-contrast
+    boundary on the card); an all-four rule threw the good axis away.
+
+    Returns (widths, confidences, h_measurable, v_measurable). Widths and
+    confidences are per-boundary from whichever pass confirmed that axis
+    (raw preferred); unconfirmed axes keep their raw numbers for debugging.
     """
     min_conf = border_cfg.get("min_boundary_confidence", DEFAULT_MIN_BOUNDARY_CONFIDENCE)
     norm_bar = border_cfg.get("normalized_min_boundary_confidence", DEFAULT_NORMALIZED_MIN_CONFIDENCE)
 
-    widths, conf = _measure_borders(image, border_cfg)
-    if all(v >= min_conf for v in conf.values()):
-        return widths, conf, True
+    (l, r, t, b), conf = _measure_borders(image, border_cfg)
+    h_ok = conf["left"] >= min_conf and conf["right"] >= min_conf
+    v_ok = conf["top"] >= min_conf and conf["bottom"] >= min_conf
 
-    widths_n, conf_n = _measure_borders(image, border_cfg, normalize=True)
-    if all(v >= norm_bar for v in conf_n.values()):
-        return widths_n, conf_n, True
+    if not (h_ok and v_ok):
+        (l_n, r_n, t_n, b_n), conf_n = _measure_borders(image, border_cfg, normalize=True)
+        if not h_ok and conf_n["left"] >= norm_bar and conf_n["right"] >= norm_bar:
+            l, r = l_n, r_n
+            conf = {**conf, "left": conf_n["left"], "right": conf_n["right"]}
+            h_ok = True
+        if not v_ok and conf_n["top"] >= norm_bar and conf_n["bottom"] >= norm_bar:
+            t, b = t_n, b_n
+            conf = {**conf, "top": conf_n["top"], "bottom": conf_n["bottom"]}
+            v_ok = True
 
-    # keep the raw numbers in the debug output — they're what failed first
-    return widths, conf, False
+    return (l, r, t, b), conf, h_ok, v_ok
 
 
 def measure_centering(front: np.ndarray, back: np.ndarray, thresholds: dict) -> CenteringResult:
     cfg = thresholds["centering"]
     border_cfg = cfg["border_detect"]
 
-    # If any boundary on a side can't be found confidently, that whole side's
-    # centering is unmeasurable — a borderless/full-art card, or a capture
-    # too blurry/dim to see the border. Reporting a grade anyway would be
-    # fake precision from argmax-of-noise (a real full-art card produced a
-    # confident-looking "89/11 grade 3" before this check existed).
-    (fl, fr, ft, fb), front_conf, front_measurable = _measure_side(front, border_cfg)
-    (bl, br, bt, bb), back_conf, back_measurable = _measure_side(back, border_cfg)
+    # An axis whose boundaries can't be found confidently is unmeasurable —
+    # a borderless/full-art card, or a capture too blurry/dim to show that
+    # boundary. Reporting its ratio anyway would be fake precision from
+    # argmax-of-noise (a real full-art card produced a confident-looking
+    # "89/11 grade 3" before this check existed). Measurable axes still
+    # grade: a side's grade is the min over its measurable axes, None only
+    # when neither axis measures.
+    (fl, fr, ft, fb), front_conf, f_h_ok, f_v_ok = _measure_side(front, border_cfg)
+    (bl, br, bt, bb), back_conf, b_h_ok, b_v_ok = _measure_side(back, border_cfg)
 
-    front_h = _axis_centering("left", "right", fl, fr, cfg["front_tolerances"])
-    front_v = _axis_centering("top", "bottom", ft, fb, cfg["front_tolerances"])
-    front_grade = min(front_h.grade, front_v.grade) if front_measurable else None
+    def side(h_names, v_names, hpx, vpx, h_ok, v_ok, tolerances):
+        axis_h = _axis_centering(*h_names, *hpx, tolerances)
+        axis_h.measurable = h_ok
+        axis_v = _axis_centering(*v_names, *vpx, tolerances)
+        axis_v.measurable = v_ok
+        grades = [a.grade for a in (axis_h, axis_v) if a.measurable]
+        return axis_h, axis_v, (min(grades) if grades else None)
 
-    back_h = _axis_centering("left", "right", bl, br, cfg["back_tolerances"])
-    back_v = _axis_centering("top", "bottom", bt, bb, cfg["back_tolerances"])
-    back_grade = min(back_h.grade, back_v.grade) if back_measurable else None
+    front_h, front_v, front_grade = side(
+        ("left", "right"), ("top", "bottom"), (fl, fr), (ft, fb), f_h_ok, f_v_ok, cfg["front_tolerances"]
+    )
+    back_h, back_v, back_grade = side(
+        ("left", "right"), ("top", "bottom"), (bl, br), (bt, bb), b_h_ok, b_v_ok, cfg["back_tolerances"]
+    )
 
     measured = [g for g in (front_grade, back_grade) if g is not None]
     overall_grade = min(measured) if measured else None
@@ -282,8 +332,10 @@ def measure_centering(front: np.ndarray, back: np.ndarray, thresholds: dict) -> 
         back_vertical=back_v,
         back_grade=back_grade,
         overall_grade=overall_grade,
-        front_measurable=front_measurable,
-        back_measurable=back_measurable,
+        # Side-level flag means "this side produced a grade at all" — i.e.
+        # at least one axis measured. Per-axis truth lives on the axes.
+        front_measurable=front_grade is not None,
+        back_measurable=back_grade is not None,
         front_confidence={k: round(v, 3) for k, v in front_conf.items()},
         back_confidence={k: round(v, 3) for k, v in back_conf.items()},
     )

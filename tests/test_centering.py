@@ -107,6 +107,61 @@ class TestMeasurable:
         r = centering.measure_centering(card, card, THRESHOLDS)
         assert r.front_measurable is False
 
+
+def one_axis_card():
+    """Vertical boundaries strong, horizontal ones invisible: border and
+    panel share the same value along left/right (like a card back whose
+    blue frame melts into blue swirl art in a soft capture), while the
+    top/bottom border-panel transition has real contrast."""
+    rng = np.random.default_rng(3)
+    img = np.full((H, W, 3), 200, np.float32)
+    # inner panel darker ONLY vertically: rows 60..H-60 keep border value at
+    # the left/right columns so no vertical boundary edge exists
+    img[60:H - 60, :] = 120
+    img += rng.normal(0, 6, img.shape)
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+class TestPerAxisMeasurability:
+    """Real case: a soft capture of a card back measured top/bottom at 0.54
+    and 0.82 confidence while left/right were ~0 (the blue-frame-to-swirl
+    transition is the lowest-contrast boundary on the card). The old
+    all-four-boundaries rule threw the good vertical measurement away."""
+
+    def test_vertical_measures_while_horizontal_does_not(self):
+        card = one_axis_card()
+        r = centering.measure_centering(card, bordered_card(), THRESHOLDS)
+        assert r.front_vertical.measurable is True
+        assert r.front_horizontal.measurable is False
+        # side still grades, from the measurable axis alone
+        assert r.front_grade == r.front_vertical.grade
+        # side-level flag means "produced a grade at all"
+        assert r.front_measurable is True
+
+    def test_axis_flags_in_dict(self):
+        r = centering.measure_centering(one_axis_card(), bordered_card(), THRESHOLDS)
+        d = r.to_dict()
+        assert d["front"]["horizontal"]["measurable"] is False
+        assert d["front"]["vertical"]["measurable"] is True
+        assert d["front"]["grade"] is not None
+
+    def test_overlay_draws_only_measurable_axis_lines(self):
+        card = one_axis_card()
+        r = centering.measure_centering(card, bordered_card(), THRESHOLDS)
+        overlay = centering.draw_overlay(card, r.front_horizontal, r.front_vertical)
+        green = (
+            (overlay[:, :, 1].astype(int) > 200)
+            & (overlay[:, :, 0].astype(int) < 100)
+            & (overlay[:, :, 2].astype(int) < 100)
+        )
+        # horizontal boundary lines exist (drawn for the V axis) but no
+        # full-height vertical lines (H axis unmeasurable): check columns —
+        # a vertical line would make some column almost entirely green
+        col_green = green.sum(axis=0)
+        row_green = green.sum(axis=1)
+        assert row_green.max() > W * 0.9, "V-axis boundary lines are drawn"
+        assert col_green.max() < H * 0.5, "no H-axis boundary lines for the unmeasurable axis"
+
     def test_to_dict_carries_measurability(self):
         r = centering.measure_centering(borderless_card(), bordered_card(), THRESHOLDS)
         d = r.to_dict()
@@ -116,11 +171,47 @@ class TestMeasurable:
         assert "boundary_confidence" in d["front"]
 
 
+class TestEdgeArtifactExclusion:
+    """The perspective warp leaves a strong straight line within a few
+    pixels of every image edge. On a real capture it scored 0.54-0.82
+    boundary confidence and produced a fake '60/40 grade 10' from a
+    top=3px/bottom=2px 'border'. The boundary search must skip that zone."""
+
+    def artifact_card(self, with_real_border: bool):
+        rng = np.random.default_rng(3)
+        img = rng.normal(60, 25, (H, W, 3))  # unmeasurable art texture
+        if with_real_border:
+            img = np.full((H, W, 3), 200, np.float32)
+            img[60:H - 60, 60:W - 60] = 120
+            img += rng.normal(0, 6, img.shape)
+        img = np.clip(img, 0, 255).astype(np.uint8)
+        # bright warp-artifact line hugging every edge (2px in)
+        img[:2, :] = 255
+        img[-2:, :] = 255
+        img[:, :2] = 255
+        img[:, -2:] = 255
+        return img
+
+    def test_artifact_alone_does_not_measure(self):
+        card = self.artifact_card(with_real_border=False)
+        r = centering.measure_centering(card, card, THRESHOLDS)
+        assert r.front_grade is None
+        assert not r.front_horizontal.measurable and not r.front_vertical.measurable
+
+    def test_real_border_still_measures_despite_artifact(self):
+        card = self.artifact_card(with_real_border=True)
+        r = centering.measure_centering(card, card, THRESHOLDS)
+        assert r.front_grade == 10
+        # and the measured widths are the real ~60px border, not the artifact
+        assert r.front_horizontal.side_a_px > 30
+
+
 class TestOverlay:
     def test_unmeasurable_overlay_has_no_boundary_lines(self):
         card = borderless_card()
         r = centering.measure_centering(card, card, THRESHOLDS)
-        overlay = centering.draw_overlay(card, r.front_horizontal, r.front_vertical, measurable=False)
+        assert not r.front_horizontal.measurable and not r.front_vertical.measurable
+        overlay = centering.draw_overlay(card, r.front_horizontal, r.front_vertical)
         # no green boundary lines drawn — only the red note text differs
         green = (
             (overlay[:, :, 1].astype(int) > 200)

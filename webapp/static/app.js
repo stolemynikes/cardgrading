@@ -814,19 +814,32 @@ function centeringSideHTML(label, sideData, overlayImg, knownFullArt = false) {
       <div class="muted" style="font-size:0.82rem">${note}</div>
     </div>`;
   }
-  // Mark the axis that set this side's grade (TAG's DINGS idea: show what
-  // actually drove the number, not just the numbers).
-  const worseAxis = sideData.horizontal.grade <= sideData.vertical.grade ? "h" : "v";
+  // Per-axis rows: a measurable axis shows its real ratio; an unmeasurable
+  // one shows n/a — its numbers would be argmax-of-noise. (Real case: a
+  // soft capture of a card back where top/bottom measured fine but the
+  // low-contrast left/right boundary was invisible — the vertical
+  // measurement is real and belongs in the report.) Older reports lack the
+  // axis flag — treat missing as measurable.
+  const hOk = sideData.horizontal.measurable !== false;
+  const vOk = sideData.vertical.measurable !== false;
+  // DINGS marker goes to the measurable axis that set this side's grade.
+  let worseAxis = null;
+  if (hOk && vOk) worseAxis = sideData.horizontal.grade <= sideData.vertical.grade ? "h" : "v";
+  else if (hOk) worseAxis = "h";
+  else if (vOk) worseAxis = "v";
   const ding = `<span class="ding-marker" title="This axis set the grade">drove the grade</span>`;
+  const axisRow = (labelChar, axis, ok, isWorse) =>
+    ok
+      ? `<div class="axis-row"><span class="axis-label">${labelChar}</span><span class="mono">${escapeHtml(axis.ratio)}</span>
+      <span class="grade-pill-sm">g${axis.grade}</span>${isWorse ? ding : ""}</div>`
+      : `<div class="axis-row"><span class="axis-label">${labelChar}</span><span class="muted">n/a — boundary not visible in this capture</span></div>`;
   return `<div class="centering-card">
     <div class="centering-card-header">${label}
       <span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}</span>
     </div>
     ${overlayImg ? `<img class="overlay-img" src="${overlayImg}" alt="${label} centering overlay">` : ""}
-    <div class="axis-row"><span class="axis-label">H</span><span class="mono">${escapeHtml(sideData.horizontal.ratio)}</span>
-      <span class="grade-pill-sm">g${sideData.horizontal.grade}</span>${worseAxis === "h" ? ding : ""}</div>
-    <div class="axis-row"><span class="axis-label">V</span><span class="mono">${escapeHtml(sideData.vertical.ratio)}</span>
-      <span class="grade-pill-sm">g${sideData.vertical.grade}</span>${worseAxis === "v" ? ding : ""}</div>
+    ${axisRow("H", sideData.horizontal, hOk, worseAxis === "h")}
+    ${axisRow("V", sideData.vertical, vOk, worseAxis === "v")}
   </div>`;
 }
 
