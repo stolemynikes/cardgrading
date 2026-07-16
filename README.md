@@ -315,10 +315,21 @@ output/                       Reports and debug images land here (gitignored)
   defects from holo shimmer/print color rather than relying on contrast heuristics.
   Bigger lift than anything built so far — new capture rig, new CV module, protocol
   changes — sketched out but not started.
-- **Learning from TAG's public DIG reports** (per-card defect data + grades, published
-  at `tagd.co/CERT#`) as a larger calibration dataset than manually grading your own
-  cards — needs a scale-conversion (TAG's 1000-point score → this tool's 1-10) and a
-  read of TAG's terms before doing any bulk collection.
+- **Calibration against professionally graded cards — attempted, negative result
+  (2026-07).** TAG DIG scraping was ruled out first: their ToS §5.2(j) explicitly
+  prohibits automated collection. Instead, `calibration/fit_from_dataset.py` collected
+  150 fit rows from a public HF dataset of slabbed-card listing photos (real PSA-scale
+  overall grades; grade bands 1–10 all represented; our own centering measurement +
+  vision flat judgments as features). Verdict: **do not ship the fitted weights.**
+  Leave-one-out MAE plateaued at 2.3 grades for every feature combination. Root cause
+  is input resolution, not the method: cards extracted from slab photos are ~300px
+  wide, and at that size the vision judgments cluster at 7–9 regardless of true grade
+  (a PSA 2 and a PSA 9 both "look fine"), while pixel centering is pure noise
+  (corr −0.04, n=150). Weights fit on those inputs would also transfer wrongly to the
+  app's full-resolution captures. What WOULD work: the same harness pointed at
+  high-resolution labeled images — most practically, photographing your own
+  professionally graded cards through the app (`calibration/calibrate.py --fit`).
+  The collected rows are kept in `calibration/dataset_fit_rows.json` for reuse.
 - **A blur pre-check / gate.** Motion blur silently degrades corner and surface
   analysis, and nothing currently warns about it. A cheap Laplacian-based metric was
   prototyped but didn't discriminate on available data: smooth-but-sharp card art

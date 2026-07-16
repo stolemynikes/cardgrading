@@ -1,0 +1,1352 @@
+[
+ {
+  "filename": "pwcc-psa2p0-66ac08cfdf.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 7,
+  "surface": 9,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa1p0-cfe76313bc.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 6,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-ace2p0-5f05e217fb.jpg",
+  "source": "ebay_ace",
+  "centering": 9,
+  "corners_edges": 5,
+  "surface": 5,
+  "overall_actual": 2.2,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa5p0-2fb643e7e4.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa08-5eb3b74308.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa3p0-544119900b.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa09-a75827e9df.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 10,
+  "surface": 10,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa7p0-07e109bfcf.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 10,
+  "surface": 10,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa10p0-32c3617e2a.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa7p0-1829978468.jpg",
+  "source": "pwcc_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa9p5-f989d0064d.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 10,
+  "surface": 10,
+  "overall_actual": 9.5,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa1p5-af19465482.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa03-abd8dafc81.jpg",
+  "source": "ebay_psa",
+  "centering": 1,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa5p0-5e84b9acf8.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 10,
+  "surface": 10,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-cgc5p5-c33bd6f74c.jpg",
+  "source": "ebay_cgc",
+  "centering": 9,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 5.5,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa01-78792ef650.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 6,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa1p5-f82006211a.jpg",
+  "source": "ebay_psa",
+  "centering": 1,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa3p0-eeddff1299.jpg",
+  "source": "pwcc_psa",
+  "centering": 6,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa07-541875e8f5.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 10,
+  "surface": 10,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa08-be0e089956.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 10,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "pwcc-psa9p0-e2f9aa2a8f.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 8,
+  "surface": 7,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-b7c4b43996.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-f1ba4e5a8b.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa01-cec177034f.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 1,
+  "surface": 1,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa02-c3aa3065d6.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 4,
+  "surface": 4,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-e687d4ef49.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa06-4d85d49aea.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-cgc4p5-c3d4c213ee.jpg",
+  "source": "ebay_cgc",
+  "centering": 8,
+  "corners_edges": 4,
+  "surface": 5,
+  "overall_actual": 4.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa6p0-a87bbf1bb3.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 10,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-cc185f4ac2.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 6,
+  "surface": 8,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-d08cede9bb.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa3p0-cbc29eed7c.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-cgc4p5-2499c0cfbd.jpg",
+  "source": "ebay_cgc",
+  "centering": 9,
+  "corners_edges": 4,
+  "surface": 5,
+  "overall_actual": 4.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-fb59e2bcbc.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-ccac283cc1.jpg",
+  "source": "ebay_psa",
+  "centering": 6,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-6fe1cb2e89.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 5,
+  "surface": 6,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-95ca4424de.jpg",
+  "source": "ebay_psa",
+  "centering": 5,
+  "corners_edges": 4,
+  "surface": 6,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-42f350f04c.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-fc2c5d2e73.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-cgc6p5-44f62fa398.jpg",
+  "source": "ebay_cgc",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 6.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa02-03019a3ed7.jpg",
+  "source": "ebay_psa",
+  "centering": 3,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa04-8f156bb926.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-281367982f.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa09-8e3f5f95fe.jpg",
+  "source": "ebay_psa",
+  "centering": 1,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-cgc2p5-be33f234b1.jpg",
+  "source": "ebay_cgc",
+  "centering": 6,
+  "corners_edges": 2,
+  "surface": 3,
+  "overall_actual": 2.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa8p0-d0e0ab18ec.jpg",
+  "source": "pwcc_psa",
+  "centering": 8,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-4953ae1585.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 7,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa09-56bd6e0150.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa4p0-d02a6ec930.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-ba53b468ec.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-5c94170ccf.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-8ced495dd1.jpg",
+  "source": "pwcc_psa",
+  "centering": 1,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-847abe6828.jpg",
+  "source": "ebay_psa",
+  "centering": 3,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-74390931a6.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa07-1e70987e11.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p5-e684b3c375.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 7,
+  "surface": 7,
+  "overall_actual": 7.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-a815cebe22.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 7,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p0-9842148867.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-1df4aeee3e.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 7,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-cgc6p5-27397ddc09.jpg",
+  "source": "ebay_cgc",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 6.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa07-05d03cab8a.jpg",
+  "source": "ebay_psa",
+  "centering": 3,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-65ea0acb86.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa6p0-870a7c9c80.jpg",
+  "source": "pwcc_psa",
+  "centering": 1,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-0a8989b033.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-576ed16fa4.jpg",
+  "source": "pwcc_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-e4caf5ed6f.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-804eed97e0.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 2,
+  "surface": 2,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa4p0-5f704a6f12.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 4,
+  "surface": 5,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa6p0-3f887da5d8.jpg",
+  "source": "pwcc_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa08-1398482b28.jpg",
+  "source": "ebay_psa",
+  "centering": 1,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-105d97a1ff.jpg",
+  "source": "pwcc_psa",
+  "centering": 3,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-2.5-flash"
+ },
+ {
+  "filename": "ebay-psa1p0-703992789a.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-be8b3a60a6.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 4,
+  "surface": 4,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-4c5e95bd78.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa07-709287073f.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 7,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-8b953d9ba0.jpg",
+  "source": "pwcc_psa",
+  "centering": 3,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa09-bece372f25.jpg",
+  "source": "ebay_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa10-1402b08a62.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-c3aa3065d6.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 4,
+  "surface": 3,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-c439caa2e2.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa4p0-95ead91c6a.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-7de2818b6a.jpg",
+  "source": "pwcc_psa",
+  "centering": 1,
+  "corners_edges": 3,
+  "surface": 4,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-4a11c4eef9.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa3p0-9276b96492.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-bgs6p5-817deefdd1.jpg",
+  "source": "ebay_bgs",
+  "centering": 10,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-75a49fb88e.jpg",
+  "source": "pwcc_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-82c11d3cd0.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 5,
+  "surface": 7,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-3b363b6d52.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 3,
+  "surface": 3,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa6p0-9faa4880fc.jpg",
+  "source": "pwcc_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-bgs9p5-ade4f8fa34.jpg",
+  "source": "ebay_bgs",
+  "centering": 5,
+  "corners_edges": 10,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa08-69f72f4000.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-4e417905a8.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa6p0-5f3facaa8e.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa08-448094ad59.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 5,
+  "surface": 6,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-6c0b12e757.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa03-c100bb655f.jpg",
+  "source": "ebay_psa",
+  "centering": 6,
+  "corners_edges": 8,
+  "surface": 7,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa4p0-d75a3884a2.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-a8e774db4f.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa08-2a688d65cb.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-8f64dd1f88.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa01-9842148867.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa3p0-d6ee28ed2a.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-48026ed87b.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-dba2ab18d9.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-d692e20278.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa8p5-020838044d.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 8.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-bgs9p5-5727fe676c.jpg",
+  "source": "ebay_bgs",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-02f9e39b9b.jpg",
+  "source": "ebay_psa",
+  "centering": 6,
+  "corners_edges": 5,
+  "surface": 7,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa03-9d63efb377.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-df06416502.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-3cf1aec13c.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-e654f97566.jpg",
+  "source": "pwcc_psa",
+  "centering": 1,
+  "corners_edges": 3,
+  "surface": 3,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-21682f548d.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-63d8716548.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-f1e1696752.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 3,
+  "surface": 3,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-172c7e6696.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 4,
+  "surface": 5,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa05-8a43cfa408.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 7,
+  "surface": 6,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-236b775ae8.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa8p0-6f564a81b1.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-6302955d51.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-d794c655f2.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa03-fb59e2bcbc.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa4p0-c38999c651.jpg",
+  "source": "pwcc_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-9a505d4192.jpg",
+  "source": "pwcc_psa",
+  "centering": 4,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa07-30160c05ff.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-bgs6p5-7a3262c579.jpg",
+  "source": "ebay_bgs",
+  "centering": 9,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa8p0-dbc250300e.jpg",
+  "source": "pwcc_psa",
+  "centering": 6,
+  "corners_edges": 8,
+  "surface": 8,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa1p0-c06d1a9a99.jpg",
+  "source": "pwcc_psa",
+  "centering": 3,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-140a06071f.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-33336ddca9.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa2p0-7466968f0a.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 2.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa03-3e9587dfbb.jpg",
+  "source": "ebay_psa",
+  "centering": 6,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 3.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa9p0-e63a4acbdf.jpg",
+  "source": "pwcc_psa",
+  "centering": 5,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-ace1p0-d0628f3f39.jpg",
+  "source": "ebay_ace",
+  "centering": 10,
+  "corners_edges": 1,
+  "surface": 1,
+  "overall_actual": 1.2,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-cgc4p0-94419cf579.jpg",
+  "source": "pwcc_cgc",
+  "centering": 8,
+  "corners_edges": 6,
+  "surface": 7,
+  "overall_actual": 4.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa5p0-61d8609279.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 7,
+  "overall_actual": 5.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa07-096d688c87.jpg",
+  "source": "ebay_psa",
+  "centering": 10,
+  "corners_edges": 7,
+  "surface": 7,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa09-9cd9bd4788.jpg",
+  "source": "ebay_psa",
+  "centering": 7,
+  "corners_edges": 10,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa09-2ad327aa0d.jpg",
+  "source": "ebay_psa",
+  "centering": 1,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 9.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa01-276ff589ba.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-5d06906d4e.jpg",
+  "source": "ebay_psa",
+  "centering": 9,
+  "corners_edges": 5,
+  "surface": 7,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa7p0-7e298fc41c.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 7,
+  "surface": 8,
+  "overall_actual": 7.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa8p0-55dbd22033.jpg",
+  "source": "pwcc_psa",
+  "centering": 7,
+  "corners_edges": 8,
+  "surface": 9,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa10p0-d4755953ee.jpg",
+  "source": "pwcc_psa",
+  "centering": 10,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa01-f850d6b7d8.jpg",
+  "source": "ebay_psa",
+  "centering": 4,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 1.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-cgc6p5-9157b763cf.jpg",
+  "source": "ebay_cgc",
+  "centering": 3,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 6.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa10-adc16724c8.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 10.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "pwcc-psa8p0-963de4e364.jpg",
+  "source": "pwcc_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 8,
+  "overall_actual": 8.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa1p5-3b309a8b77.jpg",
+  "source": "ebay_psa",
+  "centering": 8,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 1.5,
+  "vision_model": "gemini-3.1-flash-lite"
+ },
+ {
+  "filename": "ebay-psa06-287689a88d.jpg",
+  "source": "ebay_psa",
+  "centering": 3,
+  "corners_edges": 9,
+  "surface": 9,
+  "overall_actual": 6.0,
+  "vision_model": "gemini-3.1-flash-lite"
+ }
+]
