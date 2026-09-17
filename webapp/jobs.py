@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from grade import grade_card
+from webapp import store
 
 MAX_CONCURRENT_JOBS = 2
 JOB_TTL_SECONDS = 15 * 60
@@ -25,10 +26,11 @@ JOB_TTL_SECONDS = 15 * 60
 STAGE_MESSAGES = {
     "detect": "Detecting card…",
     "identify": "Identifying card…",
+    "card_vision": "Building Card Vision…",
+    "dimensions": "Measuring dimensions…",
     "centering": "Measuring centering…",
     "corners_edges": "Analyzing corners & edges…",
-    "surface": "Mapping surface…",
-    "vision_flat": "Getting AI opinion…",
+    "surface": "Grading surface…",
     "scoring": "Assembling grade…",
     "done": "Done",
 }
@@ -47,6 +49,7 @@ class Job:
     error: str | None = None
     created_at: float = field(default_factory=time.time)
     retrieved: bool = False
+    save_error: str | None = None  # set when the report couldn't be persisted
 
 
 _JOBS: dict[str, Job] = {}
@@ -109,17 +112,31 @@ def _image_to_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{data}"
 
 
-def _collect_images(output_dir: Path, has_surface: bool) -> dict[str, str]:
-    """Base64-encode every overlay/debug image grade_card() wrote, keyed by a
-    stable name the frontend knows about. Missing files (e.g. a failed
-    capture-quality gate means most of these never got written) are skipped
-    silently — the frontend already gets the reason from report.capture_quality.
+def _image_paths(output_dir: Path, has_surface: bool) -> dict[str, Path]:
+    """Every overlay/debug image grade_card() writes, keyed by the stable name
+    the frontend knows about. Paths only — the caller decides whether to
+    encode them for a response or copy them into the report store.
+
+    Files that don't exist are dropped by the callers rather than here: a
+    failed capture-quality gate means most of these never got written, and
+    the frontend already gets the reason from report.capture_quality.
     """
     candidates: dict[str, Path] = {
         "front_aligned": output_dir / "front_aligned.png",
         "back_aligned": output_dir / "back_aligned.png",
+        # Full-scale warps, for zooming into rather than measuring from.
+        # Stored, but never base64'd into a response — see DETAIL_IMAGE_KEYS.
+        "front_detail": output_dir / "front_detail.png",
+        "back_detail": output_dir / "back_detail.png",
         "front_centering_overlay": output_dir / "front_centering_overlay.png",
         "back_centering_overlay": output_dir / "back_centering_overlay.png",
+        # Card Vision: the relief render the report's transparency slider
+        # cross-fades against the aligned capture. The normal map and albedo
+        # only exist on the photometric path.
+        "front_card_vision": output_dir / "front_card_vision.png",
+        "back_card_vision": output_dir / "back_card_vision.png",
+        "front_card_vision_normals": output_dir / "front_card_vision_normals.png",
+        "back_card_vision_normals": output_dir / "back_card_vision_normals.png",
     }
     for side in ("front", "back"):
         for region in (
@@ -139,7 +156,22 @@ def _collect_images(output_dir: Path, has_surface: bool) -> dict[str, str]:
             candidates[f"{side}_surface_defect_map"] = output_dir / "surface" / f"{side}_defect_map.png"
             candidates[f"{side}_surface_annotated"] = output_dir / "surface" / f"{side}_annotated.png"
 
-    return {key: _image_to_data_uri(path) for key, path in candidates.items() if path.exists()}
+    return {key: path for key, path in candidates.items() if path.exists()}
+
+
+# Tens of megabytes each. They're fetched by URL, on demand, when someone
+# actually zooms — inlining them would put the whole lot in every report
+# response whether or not anyone looks.
+DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"})
+
+
+def _collect_images(output_dir: Path, has_surface: bool) -> dict[str, str]:
+    """The same images, base64-encoded for a JSON response."""
+    return {
+        key: _image_to_data_uri(path)
+        for key, path in _image_paths(output_dir, has_surface).items()
+        if key not in DETAIL_IMAGE_KEYS
+    }
 
 
 async def run_job(
@@ -150,6 +182,10 @@ async def run_job(
     output_dir: Path,
     job_root: Path,
     surface_paths: tuple[Path, Path] | None,
+    dpi: float | None = None,
+    photometric_paths: tuple[list[Path] | None, list[Path] | None] = (None, None),
+    rotation: str = "cw",
+    reports_dir: Path | None = None,
 ) -> None:
     job = _JOBS.get(job_id)
     if job is None:
@@ -174,10 +210,28 @@ async def run_job(
                     surface_paths=surface_paths,
                     verbose=False,
                     on_stage=on_stage,
+                    dpi=dpi,
+                    photometric_paths=photometric_paths,
+                    rotation=rotation,
                 ),
             )
-            images = _collect_images(output_dir, has_surface=surface_paths is not None)
-            job.result = {"report": report, "images": images}
+            has_surface = surface_paths is not None
+            images = _collect_images(output_dir, has_surface=has_surface)
+
+            # The job id doubles as the report id: the client already has it
+            # from the grade call, so the permalink it shows needs no extra
+            # round trip. Persisting is best-effort — a full disk shouldn't
+            # cost the user the report they just waited for, so a failure
+            # here is recorded on the job and the result still comes back.
+            report_id = None
+            if reports_dir is not None:
+                try:
+                    store.save_report(reports_dir, job_id, report, _image_paths(output_dir, has_surface))
+                    report_id = job_id
+                except OSError as e:
+                    job.save_error = str(e)
+
+            job.result = {"report": report, "images": images, "report_id": report_id}
             job.status = "done"
             job.message = "Done"
         except Exception as e:  # noqa: BLE001 - report any failure back to the client, don't crash the server

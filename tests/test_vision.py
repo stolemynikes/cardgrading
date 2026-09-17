@@ -1,10 +1,11 @@
 """Vision provider selection and failure normalization (no network calls).
 
-judge_surface picks a provider from configured credentials — Claude when
-ANTHROPIC_API_KEY is set, Gemini when only GEMINI_API_KEY/GOOGLE_API_KEY is —
-and every provider failure (missing key, rate limit, unparseable output)
-must surface as VisionUnavailable so callers can treat the review as
-"skipped" rather than crashing the grade.
+Identification is the only model call left in the pipeline. It picks a
+provider from configured credentials — Claude when ANTHROPIC_API_KEY is set,
+Gemini when only GEMINI_API_KEY/GOOGLE_API_KEY is — and every provider
+failure (missing key, rate limit, unparseable output) must surface as
+VisionUnavailable so callers can treat it as "skipped" rather than crashing
+the grade.
 """
 
 from pathlib import Path
@@ -14,16 +15,21 @@ import pytest
 
 from llm import vision
 
-JUDGMENT = vision.SurfaceJudgment(
-    surface_grade=8,
-    confidence="medium",
-    defects_found=["light scratch near the top edge"],
-    holo_regions_ignored=False,
-    reasoning="Minor surface wear visible under raking light.",
+JUDGMENT = vision.CardIdentification(
+    card_name="Emberlisk",
+    set_name="Test Set",
+    collector_number="017",
+    game="pokemon",
+    is_full_art=False,
+    is_holo=False,
+    front_image_side="front",
+    back_image_side="back",
+    looks_like_same_card=True,
+    confidence="high",
 )
 
-CROP = Path("crop.png")
-DEFECT_MAP = Path("map.png")
+FRONT = Path("front.png")
+BACK = Path("back.png")
 
 
 def clear_keys(monkeypatch):
@@ -36,7 +42,7 @@ class TestProviderSelection:
         clear_keys(monkeypatch)
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
         with patch.object(vision, "_judge_claude", return_value=JUDGMENT) as claude:
-            judgment, model = vision.judge_surface(CROP, DEFECT_MAP)
+            judgment, model = vision.identify_card(FRONT, BACK)
         claude.assert_called_once()
         assert judgment is JUDGMENT
         assert model == vision.CLAUDE_MODEL
@@ -45,7 +51,7 @@ class TestProviderSelection:
         clear_keys(monkeypatch)
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
         with patch.object(vision, "_judge_gemini", return_value=(JUDGMENT, vision.GEMINI_MODELS[0])) as gemini:
-            judgment, model = vision.judge_surface(CROP, DEFECT_MAP)
+            judgment, model = vision.identify_card(FRONT, BACK)
         gemini.assert_called_once()
         assert model == vision.GEMINI_MODELS[0]
 
@@ -53,7 +59,7 @@ class TestProviderSelection:
         clear_keys(monkeypatch)
         monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
         with patch.object(vision, "_judge_gemini", return_value=(JUDGMENT, vision.GEMINI_MODELS[0])):
-            _, model = vision.judge_surface(CROP, DEFECT_MAP)
+            _, model = vision.identify_card(FRONT, BACK)
         assert model == vision.GEMINI_MODELS[0]
 
     def test_anthropic_wins_when_both_keys_present(self, monkeypatch):
@@ -62,7 +68,7 @@ class TestProviderSelection:
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
         with patch.object(vision, "_judge_claude", return_value=JUDGMENT) as claude, \
              patch.object(vision, "_judge_gemini") as gemini:
-            _, model = vision.judge_surface(CROP, DEFECT_MAP)
+            _, model = vision.identify_card(FRONT, BACK)
         claude.assert_called_once()
         gemini.assert_not_called()
         assert model == vision.CLAUDE_MODEL
@@ -73,38 +79,7 @@ class TestProviderSelection:
         clear_keys(monkeypatch)
         with patch.object(vision, "_judge_claude", side_effect=vision.VisionUnavailable("no creds")):
             with pytest.raises(vision.VisionUnavailable):
-                vision.judge_surface(CROP, DEFECT_MAP)
-
-
-class TestFlatJudgment:
-    FLAT = vision.FlatJudgment(
-        corners_grade=8,
-        edges_grade=7,
-        surface_grade=9,
-        confidence="medium",
-        defects_found=[],
-        reasoning="Light edge wear visible.",
-    )
-
-    def test_judge_flat_uses_same_provider_selection(self, monkeypatch):
-        clear_keys(monkeypatch)
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=(self.FLAT, vision.GEMINI_MODELS[0])) as gemini:
-            judgment, model = vision.judge_flat(Path("aligned.png"), "front")
-        gemini.assert_called_once()
-        assert model == vision.GEMINI_MODELS[0]
-        assert judgment.corners_grade == 8
-
-    def test_judge_flat_passes_flat_standards_and_schema(self, monkeypatch):
-        clear_keys(monkeypatch)
-        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-        with patch.object(vision, "_judge_gemini", return_value=(self.FLAT, vision.GEMINI_MODELS[0])) as gemini:
-            vision.judge_flat(Path("aligned.png"), "back")
-        system, items, schema = gemini.call_args[0]
-        assert "flat" in system.lower()
-        assert schema is vision.FlatJudgment
-        assert any(isinstance(i, Path) for i in items)
-        assert any("back" in i for i in items if isinstance(i, str))
+                vision.identify_card(FRONT, BACK)
 
 
 class TestIdentifyCard:
@@ -151,11 +126,22 @@ class TestFailureNormalization:
         crop = tmp_path / "crop.png"
         crop.write_bytes(b"\x89PNG\r\n\x1a\n")  # minimal header; never reaches decoding
         with pytest.raises(vision.VisionUnavailable):
-            vision.judge_surface(crop, crop)
+            vision.identify_card(crop, crop)
 
     def test_claude_missing_credentials_surfaces_as_vision_unavailable(self, monkeypatch, tmp_path):
         clear_keys(monkeypatch)
         crop = tmp_path / "crop.png"
         crop.write_bytes(b"\x89PNG\r\n\x1a\n")
         with pytest.raises(vision.VisionUnavailable):
-            vision.judge_surface(crop, crop)
+            vision.identify_card(crop, crop)
+
+
+class TestSurfaceNeedsNoModel:
+    """The point of the deterministic surface path: grading a card must not
+    depend on this module at all. If a surface judgment ever reappears here,
+    the offline guarantee has quietly been lost."""
+
+    def test_module_exposes_identification_only(self):
+        assert hasattr(vision, "identify_card")
+        assert not hasattr(vision, "judge_surface")
+        assert not hasattr(vision, "judge_flat")

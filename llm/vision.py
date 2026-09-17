@@ -1,21 +1,26 @@
-"""Vision-model calls for indicative surface grading (Claude or Gemini).
+"""Card identification from two aligned photos (Claude or Gemini).
 
-Stage 4's algorithmic defect map (pipeline/surface.py) can't reliably tell a
-real scratch/print-line defect apart from holo foil sparkle or ordinary print
-detail — that needs actual judgment about what a Pokemon card is supposed to
-look like. This sends the raking-light crop plus the defect map to a vision
-model with PSA-style surface standards and asks for a structured judgment.
+This is the *only* thing in the pipeline that needs a model. Every grade —
+centering, corners, edges, surface, dimensions — is measured deterministically
+by `pipeline/`, so a card can be graded end to end with no API key and no
+network. What a model still does better than pixels is say which card it is,
+and that needs world knowledge rather than measurement.
+
+Surface judgment used to live here too, because on a raking-light photo a
+threshold can't tell a scratch from holo sparkle. Photometric stereo removed
+the premise: a surface-normal map has no albedo in it, so `pipeline/surface.py`
+now grades that signal directly and reproducibly.
 
 Provider selection (no configuration beyond the API key itself):
 - ANTHROPIC_API_KEY set -> Claude
 - else GEMINI_API_KEY (or GOOGLE_API_KEY) set -> Gemini (free tier works)
 - else -> a Claude attempt is still made (the anthropic SDK can resolve
   credentials from an `ant auth login` profile without an env var); if that
-  fails too, VisionUnavailable is raised and the caller records the review
-  as skipped.
+  fails too, VisionUnavailable is raised and the caller records the
+  identification as skipped.
 
-This sub-score is always indicative, never definitive — the caller is
-responsible for labeling it as such in the report.
+Identification is always optional. A skipped call costs the report a card
+name and the market lookup, never a grade.
 """
 
 from __future__ import annotations
@@ -42,66 +47,6 @@ class VisionUnavailable(Exception):
     """The vision review couldn't run (no credentials, network error, rate
     limit, unparseable response). Never fatal: callers treat it as "review
     skipped" and the rest of the report still stands."""
-
-
-SURFACE_GRADING_STANDARDS = """You are assisting with pre-grading a Pokemon trading card's surface \
-condition, using PSA's 1-10 surface/print-quality standards as a reference:
-
-- 10 (Gem Mint): flawless surface, no scratches, print lines, indentations, or surface wear visible \
-even under close inspection.
-- 9 (Mint): a very minor, hard-to-see surface flaw — a faint scratch or tiny print imperfection.
-- 8-7 (Near Mint-Mint / Near Mint): light scratching or minor print lines visible under normal light, \
-not distracting.
-- 6-5 (Excellent-Mint / Excellent): noticeable scratches, print lines, or surface wear, clearly visible.
-- 4 and below: significant surface damage — heavy scratching, creasing, indentations, or print defects.
-
-You will be shown two images of the same card region, captured with raking (angled) light to reveal \
-surface texture:
-1. The original color crop.
-2. A defect visibility map, where an algorithmic filter (Laplacian + difference-of-Gaussians) has \
-highlighted areas of high local contrast in red/hot colors. This map is NOISY — holo foil sparkle, \
-normal print linework, and text edges all show up here too, not just real defects. Use the defect map \
-only as a hint of where to look, then judge from the original crop whether what's there is an actual \
-physical defect (scratch, crease, indentation, print line, whitening) versus holo foil pattern, normal \
-card artwork, or text.
-
-Ignore any region that is clearly holographic foil (rainbow, iridescent sparkle pattern) — that is not \
-a defect."""
-
-
-class SurfaceJudgment(BaseModel):
-    surface_grade: int = Field(ge=1, le=10, description="PSA-style surface sub-grade estimate, 1-10")
-    confidence: str = Field(description="low, medium, or high confidence, given the photo quality")
-    defects_found: list[str] = Field(description="Short description of each real physical defect found; empty if none")
-    holo_regions_ignored: bool = Field(description="Whether holo-foil regions were present and excluded from judgment")
-    reasoning: str = Field(description="Brief explanation of the grade, 2-4 sentences")
-
-
-FLAT_GRADING_STANDARDS = """You are assisting with pre-grading a Pokemon trading card from a single \
-flat, evenly-lit, perspective-corrected photo of one whole side, using PSA's 1-10 standards as a \
-reference (10 = Gem Mint, flawless; 9 = one very minor flaw; 8-7 = light wear visible under normal \
-light; 6-5 = clearly noticeable wear; 4 and below = significant damage).
-
-Judge three things independently from what is actually visible:
-1. Corners — sharpness vs. rounding/whitening/dings at each of the four corners.
-2. Edges — whitening, chipping, or roughness along the four edges.
-3. Surface — scratches, print lines, indentations, creases, staining. IMPORTANT: a flat evenly-lit \
-photo hides shallow scratches and print lines that only show under angled (raking) light, so treat \
-your surface estimate as an upper bound and say so in the reasoning; lower your stated confidence if \
-lighting or focus limits what you can see.
-
-Do not penalize holographic foil patterns, normal print texture, or artwork elements as defects. If \
-the photo is too dark, blurry, or small to judge a category, grade it conservatively and mark \
-confidence low."""
-
-
-class FlatJudgment(BaseModel):
-    corners_grade: int = Field(ge=1, le=10, description="PSA-style corners sub-grade estimate from this photo")
-    edges_grade: int = Field(ge=1, le=10, description="PSA-style edges sub-grade estimate from this photo")
-    surface_grade: int = Field(ge=1, le=10, description="PSA-style surface estimate — an upper bound, since flat lighting hides shallow defects")
-    confidence: str = Field(description="low, medium, or high confidence, given the photo quality")
-    defects_found: list[str] = Field(description="Short description of each visible defect; empty if none")
-    reasoning: str = Field(description="Brief explanation of the grades, 2-4 sentences")
 
 
 IDENTIFY_STANDARDS = """You are identifying a trading card from two perspective-corrected photos \
@@ -228,28 +173,6 @@ def _call_structured(system: str, items: list, schema: type[BaseModel]) -> tuple
     return _judge_claude(system, items, schema), CLAUDE_MODEL
 
 
-def judge_surface(crop_path: Path, defect_map_path: Path) -> tuple[SurfaceJudgment, str]:
-    """Judge surface condition from the raking-light crop + defect map.
-
-    Returns (judgment, model_name) — the model name goes into the report so
-    it's clear which provider produced which judgment when comparing runs.
-    Raises VisionUnavailable on any failure; vision review is optional, so
-    callers should catch it and treat it as "review skipped", not a fatal
-    error for the rest of the report.
-    """
-    return _call_structured(
-        SURFACE_GRADING_STANDARDS,
-        [
-            "Original crop (raking light):",
-            crop_path,
-            "Algorithmic defect visibility map (red/hot = high local contrast, NOT necessarily a real defect):",
-            defect_map_path,
-            "Judge this card region's surface condition.",
-        ],
-        SurfaceJudgment,
-    )
-
-
 def identify_card(front_aligned: Path, back_aligned: Path) -> tuple[CardIdentification, str]:
     """Identify the card from the two aligned captures, in one call.
 
@@ -268,23 +191,4 @@ def identify_card(front_aligned: Path, back_aligned: Path) -> tuple[CardIdentifi
             "Identify the card and assess the photo pair.",
         ],
         CardIdentification,
-    )
-
-
-def judge_flat(aligned_path: Path, side_label: str) -> tuple[FlatJudgment, str]:
-    """Judge corners/edges/surface from a flat perspective-corrected capture.
-
-    Complements the deterministic pipeline on the same photo: an opinion on
-    corners/edges wear that doesn't depend on the whitening thresholds, and
-    an upper-bound surface estimate when no raking-light shots were taken.
-    Same error contract as judge_surface.
-    """
-    return _call_structured(
-        FLAT_GRADING_STANDARDS,
-        [
-            f"Perspective-corrected flat photo of the card's {side_label}:",
-            aligned_path,
-            "Judge this side's corners, edges, and (as far as visible) surface condition.",
-        ],
-        FlatJudgment,
     )

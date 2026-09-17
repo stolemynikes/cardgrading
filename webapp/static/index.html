@@ -2,29 +2,58 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f6f6f4" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1420" media="(prefers-color-scheme: dark)">
   <title>Card Pre-Grader</title>
   <link rel="stylesheet" href="/static/style.css">
+  <script>
+    // Inline and before the stylesheet renders: reading this in app.js (which
+    // loads at the end of body) would paint the system theme first and then
+    // swap, which is a visible flash on every load.
+    try {
+      var t = localStorage.getItem("cardgrading.theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch (e) { /* private mode: fall through to the system preference */ }
+  </script>
 </head>
 <body>
+  <!-- Ambient light field. The glass panels blur *this*; without something
+       coloured and moving behind them, backdrop-filter renders flat grey and
+       the whole treatment reads as a mistake. Decorative, so it's hidden from
+       assistive tech and frozen under prefers-reduced-motion. -->
+  <div class="ambient" aria-hidden="true">
+    <div class="ambient-blob"></div>
+    <div class="ambient-blob"></div>
+    <div class="ambient-blob"></div>
+  </div>
+
   <header class="app-header">
     <h1>Card Pre-Grader</h1>
     <p class="tagline">indicative, not definitive</p>
+    <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Theme"></button>
   </header>
 
   <main>
     <!-- CAPTURE -->
     <section id="capture-view" class="view">
-      <div class="protocol-hint">
-        <strong>Capture protocol:</strong> dark matte background &middot; phone on a tripod, directly
-        overhead &middot; diffuse light from two sides for the flat shots &middot; raking (angled) light
-        for the surface shots &middot; if the image goes blurry you're inside the lens's focus range —
-        back away ~20cm and use the zoom slider instead.
+      <div class="protocol-hint" id="protocol-hint">
+        <div id="protocol-hint-scanner">
+          <strong>Front and back</strong> flat, card filling the frame, margin around it, matte
+          backing. For <strong>surface relief</strong>, add 3&ndash;6 shots per side: keep the camera
+          and the light where they are and turn the <em>card</em> 90&deg; each time. Scanning instead?
+          1200&nbsp;dpi, TIFF or PNG, and turn off auto-crop, auto-colour, unsharp mask, descreen and
+          dust removal.
+        </div>
+        <div id="protocol-hint-camera" hidden>
+          <strong>Capture protocol:</strong> dark matte background &middot; phone on a tripod, directly
+          overhead &middot; diffuse light from two sides &middot; if the image goes blurry you're inside
+          the lens's focus range — back away ~20cm and use the zoom slider instead.
+        </div>
       </div>
 
       <div class="mode-row">
-        <button id="surface-toggle" type="button" class="text-toggle">+ surface analysis (optional)</button>
-        <button id="picker-mode-toggle" type="button" class="text-toggle">Use photo picker instead</button>
+        <button id="picker-mode-toggle" type="button" class="text-toggle">Use camera instead</button>
       </div>
 
       <div id="camera-unavailable-banner" class="banner banner-warn" hidden></div>
@@ -55,8 +84,8 @@
             <label class="slot-label">Front</label>
             <div class="slot-body">
               <img class="thumb" hidden alt="front preview">
-              <input type="file" accept="image/*" capture="environment">
-              <div class="slot-placeholder">Tap to shoot</div>
+              <input type="file" accept="image/*">
+              <div class="slot-placeholder">Choose file</div>
             </div>
             <div class="slot-error" hidden></div>
           </div>
@@ -64,37 +93,60 @@
             <label class="slot-label">Back</label>
             <div class="slot-body">
               <img class="thumb" hidden alt="back preview">
-              <input type="file" accept="image/*" capture="environment">
-              <div class="slot-placeholder">Tap to shoot</div>
+              <input type="file" accept="image/*">
+              <div class="slot-placeholder">Choose file</div>
             </div>
             <div class="slot-error" hidden></div>
           </div>
         </div>
 
-        <div class="slots" id="surface-slots" hidden>
-          <div class="slot" data-slot="front_angled">
-            <label class="slot-label">Front (angled)</label>
-            <div class="slot-body">
-              <img class="thumb" hidden alt="front angled preview">
-              <input type="file" accept="image/*" capture="environment">
-              <div class="slot-placeholder">Tap to shoot</div>
-            </div>
-            <div class="slot-error" hidden></div>
+      </div>
+
+      <!-- SURFACE RELIEF + DIMENSIONS (picker mode only)
+           Several shots of the same side with the light arriving from a
+           different direction each time let the app solve a surface-normal
+           map, which is what separates a scratch from printed linework. The
+           card rotates; the camera and the light must not. -->
+      <div id="scanner-mode" hidden>
+        <button id="scanner-toggle" type="button" class="text-toggle">+ surface relief &amp; dimensions (optional)</button>
+        <div id="scanner-fields" hidden>
+          <div class="field-row">
+            <span class="field-label">Front rotations</span>
+            <input type="file" id="photometric-front-input" accept="image/*" multiple>
           </div>
-          <div class="slot" data-slot="back_angled">
-            <label class="slot-label">Back (angled)</label>
-            <div class="slot-body">
-              <img class="thumb" hidden alt="back angled preview">
-              <input type="file" accept="image/*" capture="environment">
-              <div class="slot-placeholder">Tap to shoot</div>
-            </div>
-            <div class="slot-error" hidden></div>
+          <div class="field-row">
+            <span class="field-label">Back rotations</span>
+            <input type="file" id="photometric-back-input" accept="image/*" multiple>
           </div>
+          <p class="field-hint">
+            3&ndash;6 shots per side of the <em>same</em> side, the card turned a further 90&deg;
+            each time. Order and direction no longer matter &mdash; each scan&rsquo;s rotation is measured
+            from the image. Don't merge them yourself &mdash; the app
+            combines them, and averaging the frames first cancels out the very shading it solves for.
+          </p>
+          <label class="field-row">
+            <span class="field-label">Turn direction</span>
+            <select id="rotation-input">
+              <option value="ccw" selected>Counter-clockwise</option>
+              <option value="cw">Clockwise</option>
+            </select>
+            <span class="field-hint">fallback only &mdash; each scan&rsquo;s rotation is measured from the
+            image itself, and this is used only where that can&rsquo;t be resolved</span>
+          </label>
+          <label class="field-row">
+            <span class="field-label">Scan DPI</span>
+            <input type="number" id="dpi-input" min="1" step="1" placeholder="e.g. 1200" inputmode="numeric">
+            <span class="field-hint">flatbed only &mdash; enables dimension / miscut measurement</span>
+          </label>
         </div>
       </div>
 
       <div id="submit-error" class="banner banner-error" hidden></div>
       <button id="submit-btn" type="button" class="primary-btn" disabled>Grade card</button>
+
+      <!-- Every finished report is saved server-side under its job id; this
+           is the way back to one without having kept the link. -->
+      <div id="saved-reports" hidden></div>
     </section>
 
     <!-- PROCESSING -->
@@ -116,7 +168,9 @@
   <!-- Fullscreen image viewer: tap any report image to inspect it at native
        resolution (the report images are 1500x2100 — plenty of real detail) -->
   <div id="lightbox" class="lightbox" hidden>
-    <button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close">&times;</button>
+    <button id="lightbox-close" class="lightbox-close" type="button" aria-label="Close image viewer">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
     <div id="lightbox-stage" class="lightbox-stage">
       <img id="lightbox-img" alt="Zoomed report image">
     </div>

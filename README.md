@@ -69,6 +69,67 @@ raking-light surface shot — it skips the tilt/glare/uneven-lighting gates, sin
 shot is *deliberately* angled and unevenly lit by design (that's what makes raking
 light work), and those gates would reject a correctly-captured photo.
 
+### Stage 1.5 — Dimensions (`pipeline/dimensions.py`)
+Measures the card's real physical size in millimetres against the 63×88mm nominal,
+catching miscuts, diamond cuts and trimming — defects of the card itself rather than
+of its condition, which is why a card outside tolerance is capped at grade 8 no
+matter how clean its surface is.
+
+This needs **absolute scale**, so it only runs on a capture whose scale is known: a
+flatbed scan with `--dpi` passed. A phone photo has no scale (the distance to the
+card is unknown), so the attribute reports as unmeasurable rather than guessing.
+
+### Stage 1.6 — Card Vision (`pipeline/cardvision.py`)
+A grayscale render of the card's *physical relief* with print stripped out —
+scratches, dents, creases and edge lifting are shape; artwork is not. The report
+cross-fades it against the normal capture on a transparency slider. Two ways to
+produce it:
+
+**Photometric stereo** (the real thing). Several captures from a fixed camera with
+the light arriving from a different direction each time solve for a per-pixel
+surface normal. Print does not affect a normal, so the render genuinely contains
+only geometry. A flatbed is the easiest rig for this: its lamp is fixed relative to
+the scan axis, so **rotating the card 90° on the glass between scans rotates the
+light in the card's frame**. Four scans = four light directions, and the canonical
+warp has already registered them to each other (an ECC pass cleans up the residual
+sub-pixel error, which matters — a two-pixel misalignment turns every print edge
+into a fake ridge in the normal map).
+
+Scans go in **rotation order**, the card turned a further 90° clockwise on the glass
+each time (`--rotation ccw` if you turn it the other way). `--lamp-azimuth` states
+where the scanner's lamp lights from in the first scan's card frame.
+
+**Single-image approximation** (the fallback, and what the phone flow gets). One
+ordinary capture, high-pass filtered to drop the low-frequency albedo, then
+attenuated wherever *color* is also changing — an ink boundary moves chroma, a
+scratch through clear laminate moves only brightness. Useful, but it cannot fully
+separate fine print detail from real geometry, and the report labels which of the
+two methods produced what you're looking at, because that difference changes how you
+read a mark.
+
+Both paths soft-threshold at the measured noise floor (MAD-estimated) before
+autoscaling. Without that, a clean card renders as its own sensor noise stretched to
+full contrast, which reads as a surface covered in defects.
+
+#### Does your scanner even light off-axis?
+
+Photometric stereo only works if the lamp reaches the card at an angle. CCD flatbeds
+do; **CIS** flatbeds (Canon LiDe and most cheap USB-powered units) put an LED strip
+nearly flush against the glass, and flat light means rotating the card changes
+nothing. Rather than guess, measure it — two scans, one of them with the card turned
+180°:
+
+```bash
+.venv/bin/python calibration/check_photometric.py scan_0.png scan_180.png --output flip.png
+```
+
+A half-turn reverses the light relative to the card while leaving optics, focus and
+the card identical, so any pixel whose brightness *flips* between the two is being
+shaded by geometry. The script reports that flipped fraction and says whether the
+solve is worth running. A "too flat" verdict doesn't make the scanner useless — it's
+still the better capture for centering, corners/edges and dimensions; it just means
+surface work stays with raking-light photos.
+
 ### Stage 2 — Centering (`pipeline/centering.py`)
 Pure geometry: finds the boundary between the card's printed border and its inner
 artwork/text panel on all four sides (via Canny edge detection along sampled bands),
@@ -94,58 +155,36 @@ never accidentally crosses from the border into the inner panel — which would 
 misread the normal border/panel color transition as a huge fake defect on every card.
 
 ### Stage 4 — Surface (`pipeline/surface.py`)
-Uses a second, angled photo lit with raking light to reveal surface texture. Runs a
-Laplacian (high-pass, catches scratches) + difference-of-Gaussians (catches print
-lines) filter stack, with a holo-foil mask that excludes iridescent regions — detected
-by *local variance* of saturation (the flicker of foil), not absolute saturation, since
-ordinary vividly-colored card borders are often just as saturated as actual foil.
+Grades surface defects — scratches, dents, creases, print lines — from whichever
+signal the capture provides, deterministically and offline. Defects are found by
+thresholding, counted, and scored against tolerance bands, with a separate cap on
+grade for a single long scratch (a hairline can cover almost no area and still be
+the first thing a grader sees).
 
-This stage produces a **visualizer only** — a `defect_area_pct` figure and an annotated
-defect map — not a grade by itself. Telling a real scratch apart from holo shimmer or
-normal print linework reliably needs actual visual judgment, which is Stage 4.5.
+What the signal is decides how much weight it carries:
 
-### Stage 4.5 — Vision-model judgment (`llm/vision.py`)
-Sends the raking-light crop plus the algorithmic defect map to a vision model with
-PSA-style surface grading standards in the prompt, and asks for a structured judgment
-(grade estimate, confidence, list of defects found, whether holo was present). Two
-providers, selected by whichever API key is configured:
+| Source | What it is | Graded? |
+|---|---|---|
+| `photometric_relief` | solved surface normals | yes — print and foil are absent from a normal map |
+| `raking_defect_map` | holo-masked defect map from an angled photo | yes, as an **upper bound** — print survives the mask |
+| `single_image_relief` | one-capture Card Vision approximation | no — print demonstrably leaks in |
 
-- **Claude** (`claude-opus-4-8`) — `ANTHROPIC_API_KEY` env var, or an `ant auth login`
-  profile. Takes precedence when both keys are set.
-- **Gemini** (`gemini-2.5-flash`, falling back to `gemini-3.1-flash-lite` on quota
-  errors — free-tier daily quota is per-model, so the fallback is a second bucket) —
-  `GEMINI_API_KEY` env var. The free tier from [aistudio.google.com](https://aistudio.google.com)
-  works, no payment card needed; a graded card uses ~3 calls. Deliberately not the
-  `gemini-flash-latest` alias: it can resolve to a just-released model with a tiny
-  preview quota (20/day, learned the hard way). Set the variable when launching the
-  webapp server: `GEMINI_API_KEY=... .venv/bin/python -m uvicorn webapp.main:app ...`
+This used to require a vision model, and for a raking-light photo that was the right
+call: a fixed threshold genuinely cannot separate a scratch from holo sparkle.
+**Photometric stereo removes the premise.** A surface-normal map contains no albedo,
+so foil, artwork and print lines are gone before anything is measured, and a
+threshold against that signal is a measurement rather than a guess.
 
-Both return the same structured `SurfaceJudgment`, and the report records which model
-produced each judgment. If no credentials are configured, this step is skipped with a
-note in the report and the rest of the pipeline still runs normally — a rate-limited
-or failed call is likewise just "review skipped", never a failed grade.
+### Stage 4.5 — Card identification (`llm/vision.py`)
+The only model call left in the pipeline, and it never touches a grade. It answers
+what the card is (name/set/number, full-art, holo), sanity-checks the capture pair
+itself (same side shot twice, front/back swapped, mismatched cards), and drives the
+market-price lookup in `market.py`.
 
-The vision layer runs three optional judgments per grade (all same skip-on-failure
-contract, ~3 calls total — Gemini's free tier allows 10/minute, 1,500/day):
-
-- **Identify** (`identify_card`) — what card is this (name/set/number, full-art, holo),
-  plus a sanity check of the photo pair itself: which side each photo actually shows
-  (catches shooting the same side twice or swapping front/back) and whether the pair
-  plausibly belongs to one physical card. A confirmed full-art card turns the
-  "centering unmeasurable" note into "expected, not a capture problem". The identified
-  card also drives a market-price lookup (`market.py`, pokemontcg.io) shown in the
-  report as raw-card value context.
-- **Flat-shot opinion** (`judge_flat`) — an independent take on corners/edges wear and
-  an upper-bound surface estimate from each flat capture. On a 2-shot flow this fills
-  the surface sub-grade (labeled as flat-shot derived). When it disagrees with the
-  pixel measurements by 3+ grades, the report shows a caution banner rather than
-  silently trusting either.
-- **Raking-light surface judgment** (`judge_surface`) — the original Stage 4.5,
-  when angled shots are provided.
-
-The report UI also marks the grade-driving region on each side (the worst
-corner/edge, TAG's "DINGS" idea) and every report image opens in a fullscreen
-pinch-zoom viewer (in-app only; the downloaded HTML keeps plain images).
+Two providers, chosen by whichever key is configured — `ANTHROPIC_API_KEY` (or an
+`ant auth login` profile) for Claude, else `GEMINI_API_KEY` for Gemini's free tier.
+**With neither, the card still grades.** Every sub-grade is measured by `pipeline/`;
+skipping identification costs a name and the market line, nothing else.
 
 ### Stage 5 — Grade assembly (`pipeline/scoring.py`)
 Combines the three sub-grades (centering, corners/edges, surface) into one overall
@@ -159,6 +198,26 @@ estimate. Two ways this combination can happen:
   squares fit against your own data (see Calibration below). `assemble_grade()` uses
   fitted weights automatically when they exist in `thresholds.json`, and falls back to
   the heuristic otherwise — nothing needs to change in how you invoke `grade.py`.
+
+The report leads with a **score out of 1000** rather than the 1–10 grade. It's the
+same estimate without the rounding — `assemble_grade()` works in floats throughout —
+so two cards that both land on 9 can still be told apart. It's this tool's own
+number, derived from this tool's own sub-grades, and is not any grading company's
+scale or comparable to one.
+
+Sub-grades are also reported **per side and per attribute** — front/back × centering,
+corners, edges, surface — since front and back are separate surfaces with separate
+wear, and corners and edges fail in different ways.
+
+### Stage 6 — DINGS (`pipeline/dings.py`)
+"Defects Identified of Notable Grade Significance": the handful of findings that
+actually set the number, ranked worst-first and pulled to the top of the report — the
+worst corner and worst edge on each side, the axis that capped centering, the defects
+the vision model called out, and a bad cut. Nothing here is a new measurement; it all
+appears in the detail sections too. A region grading a clean 10 is never listed, an
+unmeasurable centering axis is not a defect (that's a borderless card, and the
+centering section already says so), and corners and edges rank separately so a card
+with four clean corners and one chipped edge still surfaces the edge.
 
 ## Setup
 
@@ -179,8 +238,21 @@ Then either `source .venv/bin/activate` or call `.venv/bin/python` directly.
 # Front/back flat overhead shots only (centering + corners/edges)
 .venv/bin/python grade.py front.jpg back.jpg
 
-# Include angled raking-light shots for surface analysis + vision judgment
+# Surface relief from rotations — camera and light fixed, card turned 90 degrees
+.venv/bin/python grade.py front.jpg back.jpg \
+    --photometric-front r0.jpg r90.jpg r180.jpg r270.jpg \
+    --photometric-back  b0.jpg b90.jpg b180.jpg b270.jpg
+
+# Legacy: a single angled raking-light shot per side still grades, as an upper bound
 .venv/bin/python grade.py front.jpg back.jpg --surface front_angled.jpg back_angled.jpg
+
+# Flatbed scans: --dpi makes dimensions measurable (miscut/trim detection)
+.venv/bin/python grade.py front.tif back.tif --dpi 1200
+
+# Full Card Vision: 4 scans per side, card turned 90 degrees on the glass each time
+.venv/bin/python grade.py front.tif back.tif --dpi 1200 \
+    --photometric-front f0.tif f90.tif f180.tif f270.tif \
+    --photometric-back  b0.tif b90.tif b180.tif b270.tif
 ```
 
 Output goes to `output/<front-filename>_<timestamp>/` by default (`--output-dir` to
@@ -194,8 +266,41 @@ defect maps, and a `report.json` with every stage's full detail plus the final
 - Phone **directly overhead on a tripod/stand** — not handheld; camera shake and
   inconsistent framing will trip Stage 1's quality gates
 - **Diffuse light from two sides** for the flat shot — no direct lamp, it causes glare
-- **Two shots per side**: one flat overhead (measurements), one angled with raking
-  light (surface defects) — four photos total per card if you want the surface stage
+- **For surface relief, rotate the card, not the light.** Take 3–6 shots of the same
+  side with the camera and the light both fixed, turning the *card* 90° between each.
+  That's photometric stereo: the light arrives from a different direction in the
+  card's own frame each time, which is enough to solve a per-pixel surface normal.
+  A tripod and one desk lamp are the whole rig — a flatbed just does it for free,
+  since its lamp is fixed relative to the scan axis.
+- **Don't merge the rotations yourself.** The app combines them; averaging the frames
+  first cancels out the very shading the solve depends on.
+
+#### Scanning instead of shooting
+
+A flatbed beats a phone for everything except surface. It's orthographic (no
+perspective, no lens distortion), evenly lit, and repeatable — which is what makes
+centering measurable to the precision the tolerance tables assume, and what makes
+fitted calibration weights fit card variance instead of capture variance.
+
+- **1200 dpi is plenty; higher is fine but no longer wasteful.** The canonical warp
+  is 1500px across a 63mm card, i.e. ~605 dpi effective, so nothing above that reaches
+  a detector. `perspective_correct` area-averages the source down before warping —
+  `warpPerspective` cannot, since INTER_LINEAR reads a 2×2 neighbourhood and so only
+  averages a 2× reduction, point-sampling anything beyond. Measured through that
+  function, fine texture surviving an 8× downscale went from ~14 standard deviation to
+  ~2 once the pre-pass was added; without it an oversampled scan reached the whitening
+  and surface stages no cleaner than a modest one.
+- **TIFF or PNG**, never JPEG — ringing at the border/panel boundary feeds straight
+  into the centering edge detector.
+- **Turn off** auto-crop, auto-color/exposure, unsharp mask, descreen and dust
+  removal. All of them move or invent edges.
+- **Don't auto-crop**: leave margin around the card. `detect.py` samples the
+  background color to threshold the contour, and no margin means no background.
+- **Put a matte card behind it** rather than relying on the white lid — a white lid
+  against a white card border is a low color distance.
+- Clean the glass. At 1200 dpi a dust speck is a multi-pixel blob on the border.
+- Glossy cards pressed to glass can produce **Newton's rings**; if you see rainbow
+  interference banding, the holo-variance mask will read it as foil.
 
 ## Calibration
 
@@ -270,12 +375,15 @@ grade.py                    CLI entrypoint; grade_card() does the actual orchest
 market.py                   Raw-card market price lookup (pokemontcg.io) for identified cards
 pipeline/
   detect.py                 Stage 1 — contour detection, perspective correction, quality gates
+  dimensions.py              Stage 1.5 — physical size in mm, miscut/trim detection (scans only)
+  cardvision.py              Stage 1.6 — relief render: photometric stereo, or a 1-shot approximation
   centering.py               Stage 2 — border measurement, PSA tolerance grading
   corners_edges.py           Stage 3 — whitening detection
-  surface.py                 Stage 4 — scratch/print-line defect visualization
-  scoring.py                 Stage 5 — grade assembly (heuristic or fitted weights)
+  surface.py                 Stage 4 — defect detection and deterministic surface grading
+  scoring.py                 Stage 5 — grade assembly (heuristic or fitted weights) + score
+  dings.py                   Stage 6 — ranking the defects that actually set the grade
 llm/
-  vision.py                  Vision judgments (Claude or Gemini): identify, flat opinion, surface
+  vision.py                  Card identification only (Claude or Gemini) — never a grade
 webapp/
   main.py                    FastAPI app (upload validation, job endpoints)
   jobs.py                    In-memory job queue, temp-dir lifecycle, progress messages
@@ -284,6 +392,7 @@ webapp/
 calibration/
   thresholds.json             All tunable values — nothing is hardcoded in the pipeline modules
   calibrate.py                Batch calibration harness (measure + --fit)
+  check_photometric.py        Two-scan test of whether a scanner lights the card off-axis
 tests/                        pytest suite for the pipeline
 output/                       Reports and debug images land here (gitignored)
 ```

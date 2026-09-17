@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-"""Card pre-grader CLI (Phase 1: detect/normalize + centering; Phase 2: corners/edges;
-Phase 3: surface defect map; Phase 4: vision-model surface judgment + grade assembly).
+"""Card pre-grader CLI.
+
+Every sub-grade — centering, corners/edges, surface, dimensions — is measured
+deterministically, so a card grades end to end with no API key and no network.
+The one optional model call identifies the card, which drives the market
+lookup and the full-art note; skipping it costs a name, never a grade.
 
 Usage:
     python grade.py front.png back.png [--surface front_angled.png back_angled.png]
                      [--output-dir output] [--thresholds calibration/thresholds.json]
 
-Surface vision review runs automatically when --surface is passed, using
-whichever vision-model credentials are configured: ANTHROPIC_API_KEY (or an
-`ant auth login` profile) for Claude, else GEMINI_API_KEY for Gemini's free
-tier. If no credentials are available, it's skipped with a note in the
-report — the rest of the pipeline still runs.
+Card identification uses whichever credentials are configured:
+ANTHROPIC_API_KEY (or an `ant auth login` profile) for Claude, else
+GEMINI_API_KEY for Gemini's free tier. With neither, it's skipped with a note
+in the report and everything else runs unchanged.
 
 The per-card orchestration lives in grade_card() so calibration/calibrate.py
 can reuse it to batch-run the pipeline against cards with known PSA grades.
@@ -26,10 +29,11 @@ from pathlib import Path
 from typing import Callable
 
 import cv2
+import numpy as np
 
 import market
 from llm import vision
-from pipeline import centering, corners_edges, detect, scoring, surface
+from pipeline import cardvision, centering, corners_edges, detect, dimensions, dings, scoring, surface
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -50,6 +54,36 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--thresholds", type=Path, default=REPO_ROOT / "calibration" / "thresholds.json", help="Path to thresholds.json"
+    )
+    parser.add_argument(
+        "--dpi",
+        type=float,
+        help="Scan resolution of the flat captures. Only a fixed-DPI scan has a known scale, "
+        "so this is what makes the card's physical dimensions measurable (miscut/trim detection).",
+    )
+    parser.add_argument(
+        "--photometric-front",
+        nargs="+",
+        type=Path,
+        metavar="SCAN",
+        help="3+ scans of the front, the card rotated a further 90 degrees on the glass each time, "
+        "in rotation order. Solves a true surface-normal map for Card Vision.",
+    )
+    parser.add_argument(
+        "--photometric-back", nargs="+", type=Path, metavar="SCAN", help="Same, for the back."
+    )
+    parser.add_argument(
+        "--lamp-azimuth",
+        type=float,
+        default=90.0,
+        help="Direction the scanner's lamp lights from, in the first scan's card frame (degrees, "
+        "counter-clockwise from the card's right edge). Default 90 = along the card's long axis.",
+    )
+    parser.add_argument(
+        "--rotation",
+        choices=("cw", "ccw"),
+        default="cw",
+        help="Which way the card was turned between photometric scans (default: clockwise).",
     )
     return parser.parse_args(argv)
 
@@ -100,18 +134,22 @@ def save_region_overlays(card_dir: Path, side_label: str, overlays: dict) -> Non
 
 
 def run_surface_side(label: str, angled_path: Path, card_dir: Path, thresholds: dict, verbose: bool = True) -> dict | None:
+    """Build the raking-light defect map for one side.
+
+    Measurement only — the grade is assembled later from whichever surface
+    signal is most trustworthy for this capture (see `surface_grade_for_side`).
+    """
     angled_img = load_image(angled_path)
     align_result = detect.align_for_surface(angled_img, thresholds)
     print_gate_report(f"{label} (angled)", align_result, verbose)
     # Same hard/soft split as the flat shots: only a missing warp or a
     # geometry failure skips surface analysis. A soft failure (resolution)
-    # proceeds — the defect map is indicative-only anyway.
+    # proceeds — the defect map is a signal, not a verdict.
     if align_result.warped is None or align_result.hard_failures:
         _log(verbose, f"  skipping surface analysis for {label} — could not align the angled photo")
         return {
             "aligned": False,
             "gates": [{"name": g.name, "passed": g.passed, "detail": g.detail} for g in align_result.gates],
-            "vision_judgment": None,
         }
 
     result = surface.analyze_surface(align_result.warped, thresholds)
@@ -124,25 +162,252 @@ def run_surface_side(label: str, angled_path: Path, card_dir: Path, thresholds: 
     _log(
         verbose,
         f"  {label}: defect area={result.defect_area_pct:.2f}% (of non-holo area), "
-        f"holo masked={result.holo_area_pct:.2f}%, blobs={result.blob_count} — indicative only, not a grade",
+        f"holo masked={result.holo_area_pct:.2f}%, blobs={result.blob_count}, "
+        f"longest={result.longest_defect_px}px",
     )
 
     result_dict = result.to_dict()
     result_dict["aligned"] = True
-    try:
-        judgment, model_used = vision.judge_surface(
-            surf_dir / f"{label}_aligned.png", surf_dir / f"{label}_defect_map.png"
-        )
-    except vision.VisionUnavailable as e:
-        _log(verbose, f"  {label} vision review skipped: {e}")
-        result_dict["vision_judgment"] = None
-    else:
-        result_dict["vision_judgment"] = {**judgment.model_dump(), "model": model_used}
-        _log(verbose, f"  {label} vision judgment ({model_used}): surface grade={judgment.surface_grade} (confidence={judgment.confidence})")
-        for defect in judgment.defects_found:
-            _log(verbose, f"    - {defect}")
-
     return result_dict
+
+
+def surface_grade_for_side(vision, raking: dict | None, thresholds: dict) -> surface.SurfaceGrade:
+    """Grade one side's surface from the best signal available.
+
+    Preference order is about trustworthiness, not recency. Solved surface
+    normals contain no albedo, so print and foil cannot be mistaken for
+    damage — that beats a raking-light photo, where the holo mask is a
+    heuristic and some print detail always survives it. The single-capture
+    Card Vision approximation is measured and shown but never graded: print
+    demonstrably leaks into it.
+    """
+    # measurement_relief, not relief: the displayed render's gain is a viewing
+    # preference, and a viewing preference must not move a measurement.
+    if vision is not None and vision.method == "photometric_stereo":
+        measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
+        area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
+        return surface.grade_surface(area, count, longest, "photometric_relief", thresholds)
+
+    if raking and raking.get("aligned"):
+        return surface.grade_surface(
+            raking["defect_area_pct"],
+            raking["blob_count"],
+            raking.get("longest_defect_px", 0),
+            "raking_defect_map",
+            thresholds,
+        )
+
+    if vision is not None:
+        measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
+        area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
+        return surface.grade_surface(area, count, longest, "single_image_relief", thresholds)
+
+    return surface.grade_surface(0.0, 0, 0, "single_image_relief", thresholds)
+
+
+def load_derotated(path: Path, index: int, direction: str):
+    """Load the index-th photometric scan and undo the physical rotation.
+
+    Every scan in the set has the card turned a further 90 degrees on the
+    glass, so the card sits at a different angle in each raw file. Undoing
+    that here means Stage 1 sees a normally-oriented card in all of them —
+    otherwise the perspective correction would stretch a landscape card into
+    the portrait canonical frame, and a 180-degree scan would come out
+    upside down.
+
+    This is the *declared* rotation: it trusts the file order and the stated
+    turn direction. `normalise_scan` works it out from the pixels instead,
+    and this is kept as the fallback for a scan that can't be resolved.
+    """
+    image = load_image(path)
+    code = cv2.ROTATE_90_COUNTERCLOCKWISE if direction == "cw" else cv2.ROTATE_90_CLOCKWISE
+    for _ in range(index % 4):
+        image = cv2.rotate(image, code)
+    return image
+
+
+def _rotate_ccw(image, degrees: int):
+    codes = {
+        90: cv2.ROTATE_90_COUNTERCLOCKWISE,
+        180: cv2.ROTATE_180,
+        270: cv2.ROTATE_90_CLOCKWISE,
+    }
+    return image if degrees % 360 == 0 else cv2.rotate(image, codes[degrees % 360])
+
+
+def _orientation_match(warp, reference) -> float:
+    """Normalised cross-correlation of two warps, thumbnail-sized.
+
+    Distinguishing a card from the same card turned 180 degrees is the one
+    thing geometry can't do — both are portrait and both pass the aspect
+    gate — so it takes content. Downscaled hard, because what's wanted is
+    "is this the same picture the same way up", not a pixel comparison.
+    """
+    def prepare(image):
+        small = cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), (120, 168), interpolation=cv2.INTER_AREA)
+        centred = small.astype(np.float32) - float(small.mean())
+        norm = float(np.linalg.norm(centred))
+        return centred / norm if norm > 0 else centred
+
+    return float((prepare(warp) * prepare(reference)).sum())
+
+
+# Below this correlation the two orientations are indistinguishable and the
+# declared order is the better guess. A card against itself scores ~1.0; a
+# card against its own 180-degree turn scores well under 0.5 on any card with
+# asymmetric artwork, which is all of them.
+MIN_ORIENTATION_CONFIDENCE = 0.55
+
+
+def normalise_scan(path: Path, reference_warp, thresholds: dict):
+    """Warp one rotation scan upright, working out its rotation from the image.
+
+    Returns (warp, ccw_degrees_applied, confident, diagnostics). The rotation is what the
+    scan had to be turned counter-clockwise to stand the card upright, which
+    is exactly the angle the card was turned clockwise on the glass — and
+    that is what sets the light's azimuth in the card's frame.
+
+    Derived rather than declared because the declared version is a trap: it
+    depends on file order and on the operator remembering which way they
+    turned the card, it fails silently when either is wrong, and the failure
+    looks like a plausible render of a badly damaged card.
+    """
+    image = load_image(path)
+    candidates = []
+    for ccw in (0, 90, 180, 270):
+        result = detect.detect_and_normalize(_rotate_ccw(image, ccw), thresholds)
+        if result.warped is None or result.hard_failures:
+            continue
+        candidates.append((_orientation_match(result.warped, reference_warp), ccw, result))
+
+    if not candidates:
+        return None, None, False, {}
+    candidates.sort(reverse=True, key=lambda c: c[0])
+    score, ccw, result = candidates[0]
+    runner_up = candidates[1][0] if len(candidates) > 1 else -1.0
+    # Confident only if the winner is clearly the winner. A symmetrical card
+    # back, or a scan too dark to correlate, should fall back rather than
+    # pick one at random.
+    confident = score >= MIN_ORIENTATION_CONFIDENCE and score - runner_up >= 0.1
+
+    # What the detector actually found in this scan, before the warp
+    # normalised it away. A set whose frames don't line up can fail here just
+    # as easily as in the alignment: an auto-crop that clips a card edge
+    # gives a truncated quad, and the warp then stretches that scan's content
+    # to fill a frame it doesn't belong in.
+    quad = result.contour.astype(np.float64)
+    diagnostics = {
+        "contour": result.contour,
+        "orientation_score": round(float(score), 3),
+        "runner_up_score": round(float(runner_up), 3),
+        "quad_width_px": round(float((np.linalg.norm(quad[1] - quad[0]) + np.linalg.norm(quad[2] - quad[3])) / 2), 1),
+        "quad_height_px": round(float((np.linalg.norm(quad[3] - quad[0]) + np.linalg.norm(quad[2] - quad[1])) / 2), 1),
+        "scan_size_px": [int(image.shape[1]), int(image.shape[0])],
+    }
+    return result.warped, ccw, confident, diagnostics
+
+
+def build_card_vision(
+    side_label: str,
+    flat_warped,
+    photometric_paths: list[Path] | None,
+    output_dir: Path,
+    thresholds: dict,
+    lamp_azimuth: float,
+    rotation: str,
+    verbose: bool = True,
+):
+    """Card Vision for one side: photometric stereo if the scan set is there,
+    the single-image approximation otherwise.
+
+    Falls back rather than failing — a bad scan in the set costs the render
+    its fidelity, not its existence, and the method is recorded in the
+    report either way so the UI can label what the viewer is looking at.
+    """
+    cfg = thresholds["card_vision"]
+    warps = []
+    rotations: list[int] = []
+    detected: list[dict] = []
+    quads: list = []
+    fallback_reason = None
+    if not photometric_paths:
+        fallback_reason = "no rotation scans were provided for this side"
+    elif len(photometric_paths) < 3:
+        fallback_reason = (
+            f"photometric stereo needs at least 3 light directions; {len(photometric_paths)} scan(s) "
+            "were provided"
+        )
+        _log(verbose, f"  {side_label}: {fallback_reason} — using single-image Card Vision")
+    else:
+        for i, scan_path in enumerate(photometric_paths):
+            warp, ccw, confident, scan_diagnostics = normalise_scan(scan_path, flat_warped, thresholds)
+            if warp is None:
+                fallback_reason = (
+                    f"rotation scan {i + 1} of {len(photometric_paths)} ({scan_path.name}) couldn't be "
+                    "normalised at any orientation — no card contour was found in it. The solve needs "
+                    "every scan, so the whole set was dropped."
+                )
+                _log(verbose, f"  {side_label}: {fallback_reason}")
+                warps = []
+                break
+            if not confident:
+                # The pixels didn't settle it — a near-symmetrical side, or a
+                # scan too dark to correlate. Fall back on what the operator
+                # declared, which is what this used to do for every scan.
+                declared = detect.detect_and_normalize(load_derotated(scan_path, i, rotation), thresholds)
+                if declared.warped is not None and not declared.hard_failures:
+                    step = 90 if rotation == "cw" else -90
+                    warp, ccw = declared.warped, (step * i) % 360
+                    _log(verbose, f"  {side_label}: scan {i + 1} orientation unresolved — using the declared order")
+            warps.append(warp)
+            rotations.append(ccw)
+            scan_diagnostics["name"] = scan_path.name
+            scan_diagnostics["rotation_deg"] = ccw
+            # The quad itself is for the dimensions stage, not the report.
+            quads.append(scan_diagnostics.pop("contour", None))
+            detected.append(scan_diagnostics)
+
+    if len(warps) >= 3:
+        # A card turned clockwise by theta moves the lamp clockwise by theta
+        # in the card's frame, and the counter-clockwise rotation needed to
+        # stand that scan upright is exactly theta — so the measured rotation
+        # gives the azimuth directly, with no assumption about file order or
+        # which way the operator turned the card.
+        azimuths = [(lamp_azimuth + ccw) % 360.0 for ccw in rotations]
+        # The flat capture leads, with no light of its own to contribute: it
+        # is there as the registration reference, so the solved relief comes
+        # out in the same frame as the image the report cross-fades it
+        # against. Measured before this, the two were three pixels and half a
+        # percent of scale apart, which is visible on a slider.
+        vision = cardvision.photometric_card_vision(
+            warps, azimuths, cfg, registration_reference=flat_warped
+        )
+        vision.rotations_deg = rotations
+        # Fold what the detector found in each scan in with how well that
+        # scan then aligned: together they say whether a misaligned set is a
+        # capture problem or an alignment one.
+        for frame, found in zip(vision.registration or [], detected):
+            frame.update(found)
+        _log(verbose, f"  {side_label}: measured card rotations {rotations} degrees")
+        for frame in vision.registration or []:
+            _log(verbose, f"    {frame}")
+    else:
+        vision = cardvision.single_image_card_vision(flat_warped, cfg)
+        vision.fallback_reason = fallback_reason
+
+    cv2.imwrite(str(output_dir / f"{side_label}_card_vision.png"), vision.relief)
+    if vision.normal_map is not None:
+        cv2.imwrite(str(output_dir / f"{side_label}_card_vision_normals.png"), vision.normal_map)
+    if vision.albedo is not None:
+        cv2.imwrite(str(output_dir / f"{side_label}_card_vision_albedo.png"), vision.albedo)
+
+    _log(
+        verbose,
+        f"  {side_label}: {vision.method} from {vision.light_count} light direction(s), "
+        f"relief off-flat {vision.roughness_pct:.2f}% of area",
+    )
+    vision.scan_quads = quads
+    return vision
 
 
 def grade_card(
@@ -153,6 +418,10 @@ def grade_card(
     surface_paths: tuple[Path, Path] | None = None,
     verbose: bool = True,
     on_stage: Callable[[str], None] | None = None,
+    dpi: float | None = None,
+    photometric_paths: tuple[list[Path] | None, list[Path] | None] = (None, None),
+    lamp_azimuth: float = 90.0,
+    rotation: str = "cw",
 ) -> dict:
     """Run the full pipeline on one card and return the report dict.
 
@@ -163,8 +432,8 @@ def grade_card(
     of cards (see calibration/calibrate.py).
 
     on_stage, if given, is called with a short stage-name string ("detect",
-    "identify", "centering", "corners_edges", "surface", "vision_flat",
-    "scoring", "done") right before
+    "identify", "dimensions", "card_vision", "centering", "corners_edges",
+    "surface", "scoring", "done") right before
     each stage starts — for callers that want progress reporting (the
     webapp's job polling) without parsing verbose print output. Stage names
     are deliberately UI-agnostic; the caller maps them to human-readable text.
@@ -199,6 +468,16 @@ def grade_card(
         cv2.imwrite(str(output_dir / "front_aligned.png"), front_result.warped)
     if back_result.warped is not None:
         cv2.imwrite(str(output_dir / "back_aligned.png"), back_result.warped)
+
+    # A second warp at the capture's own scale, for looking at rather than
+    # measuring from. The canonical 1500x2100 is the measurement resolution —
+    # every threshold in thresholds.json is calibrated against it — but it
+    # throws away most of a 1200dpi scan, and zooming into it just
+    # interpolates. This keeps the detail that was actually captured.
+    for label, image, result in (("front", front_img, front_result), ("back", back_img, back_result)):
+        detail = detect.detail_warp(image, result.contour, thresholds)
+        if detail is not None:
+            cv2.imwrite(str(output_dir / f"{label}_detail.png"), detail)
 
     front_blocked = front_result.warped is None or front_result.hard_failures
     back_blocked = back_result.warped is None or back_result.hard_failures
@@ -247,9 +526,46 @@ def grade_card(
             m = report["market"]
             _log(verbose, f"  market match: {m['matched_name']} ({m['matched_set']} #{m['matched_number']}) prices={m['prices']}")
 
+    # Card Vision runs before centering so the relief render is available to
+    # every later stage and to the report regardless of which optional
+    # stages ran. It never blocks: worst case it is the single-image
+    # approximation of the flat capture we already have.
+    stage("card_vision")
+    _log(verbose, "\n[card vision]")
+    front_vision = build_card_vision(
+        "front", front_result.warped, photometric_paths[0], output_dir, thresholds, lamp_azimuth, rotation, verbose
+    )
+    back_vision = build_card_vision(
+        "back", back_result.warped, photometric_paths[1], output_dir, thresholds, lamp_azimuth, rotation, verbose
+    )
+    report["card_vision"] = {"front": front_vision.to_dict(), "back": back_vision.to_dict()}
+
+    stage("dimensions")
+    # After Card Vision, not before: every rotation scan it normalised is an
+    # independent measurement of the same card, and they disagree by more
+    # than the tolerance on this hardware. Resting the verdict on whichever
+    # scan happened to be the flat capture made the same card read '2.13mm
+    # miscut' one run and 'within tolerance' the next.
+    front_quads = [front_result.contour] + list(getattr(front_vision, "scan_quads", None) or [])
+    front_dimensions = dimensions.measure_from_scans(front_quads, dpi, thresholds)
+    report["dimensions"] = front_dimensions.to_dict()
+    _log(verbose, "\n[dimensions]")
+    if front_dimensions.measurable:
+        _log(
+            verbose,
+            f"  {front_dimensions.width_mm:.2f} x {front_dimensions.height_mm:.2f} mm "
+            f"(nominal {dimensions.NOMINAL_WIDTH_MM} x {dimensions.NOMINAL_HEIGHT_MM}) — {front_dimensions.note}",
+        )
+    else:
+        _log(verbose, f"  {front_dimensions.note}")
+
+
     stage("centering")
     result = centering.measure_centering(front_result.warped, back_result.warped, thresholds)
     report["centering"] = result.to_dict()
+    # What every other grading service's published table would say about the
+    # same measurement. Reference only — PSA still drives the grade.
+    report["centering"]["by_grader"] = centering.compare_graders(report["centering"], thresholds)
 
     _log(verbose, "\n[centering]")
     for side_label, axis_h, axis_v, side_grade in [
@@ -305,70 +621,76 @@ def grade_card(
     save_region_overlays(output_dir, "front", ce_overlays["front"])
     save_region_overlays(output_dir, "back", ce_overlays["back"])
 
-    surface_grade = None
+    stage("surface")
+    raking = {"front": None, "back": None}
     if surface_paths:
-        stage("surface")
         front_angled_path, back_angled_path = surface_paths
-        _log(verbose, "\n[surface] (indicative only — needs vision-model review)")
-        front_surface = run_surface_side("front", front_angled_path, output_dir, thresholds, verbose)
-        back_surface = run_surface_side("back", back_angled_path, output_dir, thresholds, verbose)
-        report["surface"] = {"front": front_surface, "back": back_surface}
-
-        front_judgment = (front_surface or {}).get("vision_judgment")
-        back_judgment = (back_surface or {}).get("vision_judgment")
-        if front_judgment and back_judgment:
-            surface_grade = min(front_judgment["surface_grade"], back_judgment["surface_grade"])
+        _log(verbose, "\n[surface] raking-light defect maps")
+        raking["front"] = run_surface_side("front", front_angled_path, output_dir, thresholds, verbose)
+        raking["back"] = run_surface_side("back", back_angled_path, output_dir, thresholds, verbose)
     else:
-        report["surface"] = None
-        _log(verbose, "\n[surface] skipped — pass --surface front_angled.png back_angled.png to run it")
+        _log(verbose, "\n[surface] no raking-light shots — grading from the Card Vision relief")
 
-    # Vision opinion on the flat captures themselves — an independent take on
-    # corners/edges wear (not tied to the whitening thresholds) plus an
-    # upper-bound surface estimate. Runs whenever vision credentials exist;
-    # skipped silently otherwise, same contract as the raking-light judgment.
-    stage("vision_flat")
-    report["vision_flat"] = None
-    try:
-        front_flat, flat_model = vision.judge_flat(output_dir / "front_aligned.png", "front")
-        back_flat, _ = vision.judge_flat(output_dir / "back_aligned.png", "back")
-    except vision.VisionUnavailable as e:
-        _log(verbose, f"\n[vision] flat-shot review skipped: {e}")
-    else:
-        report["vision_flat"] = {
-            "front": {**front_flat.model_dump(), "model": flat_model},
-            "back": {**back_flat.model_dump(), "model": flat_model},
-        }
-        _log(verbose, f"\n[vision] flat-shot opinion ({flat_model}):")
-        for side_label, judgment in (("front", front_flat), ("back", back_flat)):
-            _log(
-                verbose,
-                f"  {side_label}: corners={judgment.corners_grade} edges={judgment.edges_grade} "
-                f"surface<={judgment.surface_grade} (confidence={judgment.confidence})",
-            )
+    surface_grades = {
+        "front": surface_grade_for_side(front_vision, raking["front"], thresholds),
+        "back": surface_grade_for_side(back_vision, raking["back"], thresholds),
+    }
+    report["surface"] = {
+        side: {**surface_grades[side].to_dict(), "raking": raking[side]} for side in ("front", "back")
+    }
 
-    # No raking-light surface judgment (2-shot flow, or the angled shots
-    # failed)? The flat-shot surface estimate fills in — clearly labeled as
-    # an upper bound, since flat lighting hides shallow scratches.
-    surface_from_flat = False
-    if surface_grade is None and report["vision_flat"] is not None:
-        surface_grade = min(
-            report["vision_flat"]["front"]["surface_grade"],
-            report["vision_flat"]["back"]["surface_grade"],
+    for side in ("front", "back"):
+        sg = surface_grades[side]
+        grade_text = "not graded" if sg.grade is None else f"grade {sg.grade}"
+        _log(
+            verbose,
+            f"  {side}: defect area={sg.defect_area_pct:.3f}%, blobs={sg.defect_count}, "
+            f"longest={sg.longest_defect_px}px -> {grade_text} ({sg.source})",
         )
-        surface_from_flat = True
+
+    # The weakest side sets the sub-grade, and the whole thing is only an
+    # upper bound if every side that contributed was itself an upper bound.
+    graded = [sg for sg in surface_grades.values() if sg.grade is not None]
+    surface_grade = min((sg.grade for sg in graded), default=None)
+    surface_upper_bound = bool(graded) and all(sg.upper_bound for sg in graded)
 
     stage("scoring")
     grade_estimate = scoring.assemble_grade(
         result.overall_grade, ce_result.overall_grade, surface_grade, thresholds,
-        surface_from_flat=surface_from_flat,
+        surface_from_flat=surface_upper_bound,
+        dimensions_within_tolerance=front_dimensions.within_tolerance,
     )
     report["grade_estimate"] = grade_estimate.to_dict()
+
+    # Per-side, per-attribute breakdown. The overall grade already combines
+    # these; this is the same data split the way a grader reads a card —
+    # front and back are separate surfaces with separate wear.
+    report["subgrades"] = {
+        "front": {
+            "centering": result.front_grade,
+            "corners": ce_result.front.corners_grade,
+            "edges": ce_result.front.edges_grade,
+            "surface": surface_grades["front"].grade,
+        },
+        "back": {
+            "centering": result.back_grade,
+            "corners": ce_result.back.corners_grade,
+            "edges": ce_result.back.edges_grade,
+            "surface": surface_grades["back"].grade,
+        },
+    }
+    report["dings"] = dings.collect_dings(report)
+    _log(verbose, f"\n[dings] {len(report['dings'])} defect(s) of notable grade significance")
+    for ding in report["dings"][:8]:
+        grade_str = "n/a" if ding["grade"] is None else f"grade {ding['grade']}"
+        _log(verbose, f"  {ding['side']} {ding['label']} ({grade_str}): {ding['detail']}")
 
     _log(verbose, "\n[grade estimate]")
     _log(verbose, f"  centering:      {grade_estimate.centering_grade}")
     _log(verbose, f"  corners/edges:  {grade_estimate.corners_edges_grade}")
     _log(verbose, f"  surface:        {grade_estimate.surface_grade if grade_estimate.surface_grade is not None else 'n/a'}")
     _log(verbose, f"  overall (est.): {grade_estimate.overall_grade_rounded} ({grade_estimate.overall_grade:.2f})")
+    _log(verbose, f"  score:          {grade_estimate.score} / {scoring.MAX_SCORE}")
     _log(verbose, f"  note: {grade_estimate.note}")
 
     (output_dir / "report.json").write_text(json.dumps(report, indent=2))
@@ -389,6 +711,10 @@ def main(argv: list[str]) -> int:
         thresholds,
         card_dir,
         surface_paths=tuple(args.surface) if args.surface else None,
+        dpi=args.dpi,
+        photometric_paths=(args.photometric_front, args.photometric_back),
+        lamp_azimuth=args.lamp_azimuth,
+        rotation=args.rotation,
     )
 
     print(f"\nReport and debug images saved to {card_dir}")

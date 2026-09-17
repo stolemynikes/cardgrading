@@ -1,0 +1,144 @@
+"""grade_card() from images to report, with nothing stubbed out.
+
+Every other test here exercises one stage. That left the seams untested, and
+the seams are where the last three user-visible failures came from: a stage
+reading a variable the stage that sets it hadn't run yet, a serializer
+emitting None into code that called min() on it, and a return shape changing
+under its callers. All three passed the whole suite and broke on the first
+real card.
+"""
+
+from __future__ import annotations
+
+import json
+
+import cv2
+import numpy as np
+import pytest
+
+from grade import grade_card
+from webapp import main
+
+THRESHOLDS = json.loads(main.THRESHOLDS_PATH.read_text())
+CARD_ASPECT = 63.0 / 88.0
+DPI = 1200.0
+
+
+def _card(seed: int = 0) -> np.ndarray:
+    """A card-shaped image with a printed border and an asymmetric panel."""
+    height = int(88.0 / 25.4 * DPI / 4)
+    width = int(round(height * CARD_ASPECT))
+    card = np.full((height, width, 3), 225, np.uint8)
+    border = int(width * 0.08)
+    rng = np.random.default_rng(seed)
+    card[border:-border, border:-border] = rng.integers(40, 200, (height - 2 * border, width - 2 * border, 3), dtype=np.uint8)
+    # Asymmetric mark, so a half-turn is distinguishable from upright.
+    card[border : border + 40, border : border + 200] = 20
+    return card
+
+
+def _scan(tmp_path, name: str, ccw_on_glass: int = 0, seed: int = 0):
+    card = _card(seed)
+    frame = np.full((1400, 1400, 3), 10, np.uint8)
+    h, w = card.shape[:2]
+    top, left = (1400 - h) // 2, (1400 - w) // 2
+    frame[top : top + h, left : left + w] = card
+    codes = {90: cv2.ROTATE_90_COUNTERCLOCKWISE, 180: cv2.ROTATE_180, 270: cv2.ROTATE_90_CLOCKWISE}
+    if ccw_on_glass % 360:
+        frame = cv2.rotate(frame, codes[ccw_on_glass % 360])
+    path = tmp_path / name
+    cv2.imwrite(str(path), frame)
+    return path
+
+
+@pytest.fixture
+def capture(tmp_path):
+    return {
+        "front": _scan(tmp_path, "front.png"),
+        "back": _scan(tmp_path, "back.png", seed=1),
+        "out": tmp_path / "out",
+    }
+
+
+class TestFlatCaptureOnly:
+    def test_it_produces_a_report(self, capture, tmp_path):
+        report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
+        assert report["grade_estimate"]["overall_grade_rounded"] is not None
+
+    def test_every_section_is_present(self, capture):
+        report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
+        for section in ("capture_quality", "card_vision", "centering", "corners_edges", "surface",
+                        "dimensions", "grade_estimate", "subgrades", "dings"):
+            assert section in report, f"missing {section}"
+
+    def test_the_report_is_json_serializable(self, capture):
+        """numpy scalars and arrays leak out of the measurement code, and the
+        report is written to disk as JSON."""
+        report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
+        json.dumps(report)
+
+    def test_the_stages_fire_in_the_order_the_ui_lists_them(self, capture):
+        """The progress display walks a fixed list; a stage running out of
+        order means the UI reports the wrong thing, and — as happened — a
+        stage reading a variable a later stage sets."""
+        from webapp.jobs import STAGE_MESSAGES
+
+        seen = []
+        grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+                   on_stage=seen.append)
+        known = [s for s in seen if s in STAGE_MESSAGES]
+        expected_order = [s for s in STAGE_MESSAGES if s in known]
+        assert known == expected_order, f"stages fired {known}, UI lists {expected_order}"
+
+    def test_dimensions_are_unmeasurable_without_a_dpi(self, capture):
+        report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
+        assert report["dimensions"]["measurable"] is False
+
+
+class TestWithRotationScans:
+    """The path that has broken most often — and the one no test ran."""
+
+    @pytest.fixture
+    def photometric(self, tmp_path):
+        return [_scan(tmp_path, f"rot{i}.png", ccw_on_glass=-90 * i) for i in range(4)]
+
+    def test_a_full_photometric_run_completes(self, capture, photometric):
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        assert report["card_vision"]["front"]["method"] == "photometric_stereo"
+        assert report["card_vision"]["front"]["light_count"] == 4
+
+    def test_dimensions_use_every_scan(self, capture, photometric):
+        """The flat capture plus four rotations is five measurements of the
+        same card; resting the verdict on one made the same card read
+        '2.13mm miscut' in one run and 'within tolerance' in the next."""
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        assert report["dimensions"]["sample_count"] > 1
+        assert report["dimensions"]["spread_mm"] is not None
+
+    def test_it_still_serializes(self, capture, photometric):
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        json.dumps(report)
+
+    def test_the_measured_rotations_are_recorded(self, capture, photometric):
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        assert sorted(report["card_vision"]["front"]["rotations_deg"]) == [0, 90, 180, 270]
+
+    def test_a_short_set_falls_back_and_says_why(self, capture, photometric):
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric[:2], None),
+        )
+        assert report["card_vision"]["front"]["method"] == "single_image"
+        assert "at least 3" in report["card_vision"]["front"]["fallback_reason"]

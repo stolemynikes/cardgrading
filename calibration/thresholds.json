@@ -41,11 +41,11 @@
       },
       {
         "grade": 6,
-        "max_ratio": 75
+        "max_ratio": 80
       },
       {
         "grade": 5,
-        "max_ratio": 80
+        "max_ratio": 85
       },
       {
         "grade": 4,
@@ -53,6 +53,10 @@
       },
       {
         "grade": 3,
+        "max_ratio": 90
+      },
+      {
+        "grade": 2,
         "max_ratio": 90
       }
     ],
@@ -63,14 +67,34 @@
       },
       {
         "grade": 9,
-        "max_ratio": 80
+        "max_ratio": 90
       },
       {
         "grade": 8,
-        "max_ratio": 85
+        "max_ratio": 90
       },
       {
         "grade": 7,
+        "max_ratio": 90
+      },
+      {
+        "grade": 6,
+        "max_ratio": 90
+      },
+      {
+        "grade": 5,
+        "max_ratio": 90
+      },
+      {
+        "grade": 4,
+        "max_ratio": 90
+      },
+      {
+        "grade": 3,
+        "max_ratio": 90
+      },
+      {
+        "grade": 2,
         "max_ratio": 90
       }
     ],
@@ -79,7 +103,459 @@
       "canny_high": 120,
       "search_margin_pct": 12,
       "min_boundary_confidence": 0.35,
-      "normalized_min_boundary_confidence": 0.5
+      "normalized_min_boundary_confidence": 0.5,
+      "boundary_peak_fraction": 0.7,
+      "texture_rise_factor": 1.8,
+      "texture_rise_floor": 6.0,
+      "texture_hold_px": 120,
+      "texture_smoothing_sigma": 6.0,
+      "min_texture_boundary_confidence": 0.9,
+      "sample_bands": 5
+    },
+    "front_leeway_points": 5.0,
+    "leeway_min_grade": 7.0,
+    "graders": {
+      "psa": {
+        "label": "PSA",
+        "front_leeway_points": 5.0,
+        "leeway_min_grade": 7.0,
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9,
+            "max_ratio": 60
+          },
+          {
+            "grade": 8,
+            "max_ratio": 65
+          },
+          {
+            "grade": 7,
+            "max_ratio": 70
+          },
+          {
+            "grade": 6,
+            "max_ratio": 80
+          },
+          {
+            "grade": 5,
+            "max_ratio": 85
+          },
+          {
+            "grade": 4,
+            "max_ratio": 85
+          },
+          {
+            "grade": 3,
+            "max_ratio": 90
+          },
+          {
+            "grade": 2,
+            "max_ratio": 90
+          }
+        ],
+        "back": [
+          {
+            "grade": 10,
+            "max_ratio": 75
+          },
+          {
+            "grade": 9,
+            "max_ratio": 90
+          },
+          {
+            "grade": 8,
+            "max_ratio": 90
+          },
+          {
+            "grade": 7,
+            "max_ratio": 90
+          },
+          {
+            "grade": 6,
+            "max_ratio": 90
+          },
+          {
+            "grade": 5,
+            "max_ratio": 90
+          },
+          {
+            "grade": 4,
+            "max_ratio": 90
+          },
+          {
+            "grade": 3,
+            "max_ratio": 90
+          },
+          {
+            "grade": 2,
+            "max_ratio": 90
+          }
+        ],
+        "source": "PSA published grading standards (2025 revision: front 10 tightened 60/40 -> 55/45)"
+      },
+      "bgs": {
+        "label": "BGS",
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 50
+          },
+          {
+            "grade": 9.5,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9,
+            "max_ratio": 55
+          },
+          {
+            "grade": 8,
+            "max_ratio": 60
+          },
+          {
+            "grade": 7,
+            "max_ratio": 65
+          },
+          {
+            "grade": 6,
+            "max_ratio": 70
+          },
+          {
+            "grade": 5,
+            "max_ratio": 75
+          },
+          {
+            "grade": 4,
+            "max_ratio": 80
+          },
+          {
+            "grade": 3,
+            "max_ratio": 85
+          },
+          {
+            "grade": 2,
+            "max_ratio": 90
+          }
+        ],
+        "back": [
+          {
+            "grade": 10,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9.5,
+            "max_ratio": 60
+          },
+          {
+            "grade": 9,
+            "max_ratio": 70
+          },
+          {
+            "grade": 8,
+            "max_ratio": 80
+          },
+          {
+            "grade": 7,
+            "max_ratio": 90
+          },
+          {
+            "grade": 6,
+            "max_ratio": 95
+          },
+          {
+            "grade": 5,
+            "max_ratio": 95
+          },
+          {
+            "grade": 4,
+            "max_ratio": 100
+          },
+          {
+            "grade": 3,
+            "max_ratio": 100
+          },
+          {
+            "grade": 2,
+            "max_ratio": 100
+          }
+        ],
+        "source": "third-party transcription; BGS does not publish ratios below 9.5"
+      },
+      "cgc": {
+        "label": "CGC",
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9,
+            "max_ratio": 60
+          },
+          {
+            "grade": 8,
+            "max_ratio": 65
+          },
+          {
+            "grade": 7,
+            "max_ratio": 70
+          },
+          {
+            "grade": 6,
+            "max_ratio": 75
+          },
+          {
+            "grade": 4.5,
+            "max_ratio": 85
+          },
+          {
+            "grade": 3.5,
+            "max_ratio": 90
+          }
+        ],
+        "back": [
+          {
+            "grade": 10,
+            "max_ratio": 75
+          },
+          {
+            "grade": 9,
+            "max_ratio": 90
+          }
+        ],
+        "source": "third-party transcription; CGC leaves most TCG grades unpublished"
+      },
+      "sgc": {
+        "label": "SGC",
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9,
+            "max_ratio": 60
+          },
+          {
+            "grade": 8.5,
+            "max_ratio": 65
+          },
+          {
+            "grade": 8,
+            "max_ratio": 65
+          },
+          {
+            "grade": 7.5,
+            "max_ratio": 70
+          },
+          {
+            "grade": 7,
+            "max_ratio": 70
+          },
+          {
+            "grade": 6,
+            "max_ratio": 75
+          },
+          {
+            "grade": 5,
+            "max_ratio": 80
+          },
+          {
+            "grade": 4,
+            "max_ratio": 85
+          },
+          {
+            "grade": 3,
+            "max_ratio": 90
+          },
+          {
+            "grade": 2,
+            "max_ratio": 90
+          }
+        ],
+        "back": [],
+        "source": "third-party transcription; SGC publishes one figure per grade and no back tolerance"
+      },
+      "tag": {
+        "label": "TAG",
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 55
+          },
+          {
+            "grade": 9,
+            "max_ratio": 60
+          },
+          {
+            "grade": 8.5,
+            "max_ratio": 62.5
+          },
+          {
+            "grade": 8,
+            "max_ratio": 65
+          },
+          {
+            "grade": 7.5,
+            "max_ratio": 67.5
+          },
+          {
+            "grade": 7,
+            "max_ratio": 70
+          },
+          {
+            "grade": 6.5,
+            "max_ratio": 72.5
+          },
+          {
+            "grade": 6,
+            "max_ratio": 75
+          },
+          {
+            "grade": 5.5,
+            "max_ratio": 77.5
+          },
+          {
+            "grade": 5,
+            "max_ratio": 80
+          },
+          {
+            "grade": 4.5,
+            "max_ratio": 82.5
+          },
+          {
+            "grade": 4,
+            "max_ratio": 85
+          },
+          {
+            "grade": 3.5,
+            "max_ratio": 87.5
+          },
+          {
+            "grade": 3,
+            "max_ratio": 90
+          },
+          {
+            "grade": 2.5,
+            "max_ratio": 92.5
+          },
+          {
+            "grade": 2,
+            "max_ratio": 95
+          }
+        ],
+        "back": [
+          {
+            "grade": 10,
+            "max_ratio": 75
+          },
+          {
+            "grade": 9,
+            "max_ratio": 85
+          },
+          {
+            "grade": 8.5,
+            "max_ratio": 90
+          },
+          {
+            "grade": 8,
+            "max_ratio": 95
+          }
+        ],
+        "source": "third-party transcription, TCG column; two sources disagreed on the back figures"
+      },
+      "ace": {
+        "label": "ACE",
+        "front": [
+          {
+            "grade": 10,
+            "max_ratio": 60
+          },
+          {
+            "grade": 9,
+            "max_ratio": 65
+          },
+          {
+            "grade": 8,
+            "max_ratio": 70
+          },
+          {
+            "grade": 7,
+            "max_ratio": 75
+          },
+          {
+            "grade": 6,
+            "max_ratio": 80
+          },
+          {
+            "grade": 5,
+            "max_ratio": 80
+          },
+          {
+            "grade": 4,
+            "max_ratio": 80
+          },
+          {
+            "grade": 3,
+            "max_ratio": 85
+          },
+          {
+            "grade": 2,
+            "max_ratio": 85
+          },
+          {
+            "grade": 1,
+            "max_ratio": 85
+          }
+        ],
+        "back": [
+          {
+            "grade": 10,
+            "max_ratio": 60
+          },
+          {
+            "grade": 9,
+            "max_ratio": 70
+          },
+          {
+            "grade": 8,
+            "max_ratio": 75
+          },
+          {
+            "grade": 7,
+            "max_ratio": 80
+          },
+          {
+            "grade": 6,
+            "max_ratio": 80
+          },
+          {
+            "grade": 5,
+            "max_ratio": 80
+          },
+          {
+            "grade": 4,
+            "max_ratio": 80
+          },
+          {
+            "grade": 3,
+            "max_ratio": 85
+          },
+          {
+            "grade": 2,
+            "max_ratio": 85
+          },
+          {
+            "grade": 1,
+            "max_ratio": 85
+          }
+        ],
+        "source": "third-party transcription"
+      }
     }
   },
   "corners_edges": {
@@ -118,7 +594,10 @@
         "grade": 5,
         "max_whitening_pct": 8.0
       }
-    ]
+    ],
+    "min_saturation_below_median": 45,
+    "max_value_below_median": 25,
+    "min_border_uniformity": 0.55
   },
   "surface": {
     "laplacian_ksize": 3,
@@ -129,6 +608,78 @@
     "holo_saturation_variance_threshold": 300,
     "holo_local_variance_threshold": 400,
     "holo_mask_dilate_px": 7,
-    "physical_edge_margin_px": 3
+    "physical_edge_margin_px": 3,
+    "relief_defect_threshold": 26,
+    "grade_bands": [
+      [
+        0.05,
+        10
+      ],
+      [
+        0.15,
+        9
+      ],
+      [
+        0.4,
+        8
+      ],
+      [
+        0.9,
+        7
+      ],
+      [
+        1.8,
+        6
+      ],
+      [
+        3.5,
+        5
+      ],
+      [
+        6.0,
+        4
+      ],
+      [
+        10.0,
+        3
+      ],
+      [
+        16.0,
+        2
+      ],
+      [
+        100.0,
+        1
+      ]
+    ],
+    "scratch_length_caps": [
+      [
+        400,
+        8
+      ],
+      [
+        800,
+        7
+      ],
+      [
+        1300,
+        6
+      ]
+    ]
+  },
+  "card_vision": {
+    "light_elevation_deg": 70.0,
+    "normal_smoothing_sigma": 1.0,
+    "relief_gain": 2.0,
+    "albedo_sigma": 12.0,
+    "chroma_suppression": 24.0,
+    "single_image_gain": 3.0,
+    "flat_band": 18,
+    "physical_edge_margin_px": 8
+  },
+  "dimensions": {
+    "tolerance_mm": 0.75,
+    "squareness_tolerance_deg": 1.0,
+    "miscut_grade_cap": 8.0
   }
 }

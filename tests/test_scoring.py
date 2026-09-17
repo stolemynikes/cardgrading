@@ -103,3 +103,45 @@ class TestFitLinearWeights:
         assert fitted is not None
         pred = scoring._fitted_overall(fitted, 10, 10, 4)
         assert pred == pytest.approx(4.0, abs=0.75)
+
+
+class TestScore:
+    THRESHOLDS = {"dimensions": {"miscut_grade_cap": 8.0}}
+
+    def test_score_tracks_the_unrounded_estimate(self):
+        """The point of the score is to separate cards the 1-10 grade lumps
+        together, so two cards that round to the same grade must not get the
+        same score."""
+        strong = scoring.assemble_grade(10, 9, 9, self.THRESHOLDS)
+        weak = scoring.assemble_grade(9, 9, 9, self.THRESHOLDS)
+        assert strong.overall_grade_rounded == weak.overall_grade_rounded
+        assert strong.score > weak.score
+
+    def test_score_stays_in_range(self):
+        assert scoring.grade_to_score(10.0) == scoring.MAX_SCORE
+        assert scoring.grade_to_score(1.0) == scoring.MIN_SCORE
+        assert scoring.grade_to_score(-5.0) == scoring.MIN_SCORE
+        assert scoring.grade_to_score(99.0) == scoring.MAX_SCORE
+
+
+class TestDimensionsCap:
+    THRESHOLDS = {"dimensions": {"miscut_grade_cap": 8.0}}
+
+    def test_miscut_caps_an_otherwise_clean_card(self):
+        clean = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS)
+        miscut = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS, dimensions_within_tolerance=False)
+        assert clean.overall_grade == 10.0
+        assert miscut.overall_grade == 8.0
+        assert "cut tolerance" in miscut.note
+
+    def test_cap_never_raises_a_worse_grade(self):
+        capped = scoring.assemble_grade(4, 4, 4, self.THRESHOLDS, dimensions_within_tolerance=False)
+        assert capped.overall_grade == 4.0
+
+    def test_unmeasured_dimensions_change_nothing(self):
+        """A phone photo can't measure the card, and 'unmeasured' must not be
+        treated as either pass or fail."""
+        baseline = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS)
+        unmeasured = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS, dimensions_within_tolerance=None)
+        within = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS, dimensions_within_tolerance=True)
+        assert baseline.overall_grade == unmeasured.overall_grade == within.overall_grade

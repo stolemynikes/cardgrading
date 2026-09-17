@@ -182,13 +182,74 @@ def find_card_contour(image: np.ndarray) -> np.ndarray | None:
     return best_quad
 
 
+# warpPerspective offers no area-averaging mode: INTER_LINEAR reads a 2x2
+# neighbourhood wherever it lands, so it can only properly average a 2x
+# reduction. Past that it point-samples and the detail in between is aliased
+# rather than averaged.
+#
+# Measured through this function on a flat grey carrying paper-fibre noise
+# and a 150lpi-style screen (card interior only, excluding the warp's border
+# pixels), fine-detail standard deviation came out:
+#
+#     downscale    warp as-is    with this pre-pass    ideal (1/N)
+#         4x          13.69             4.56              4.83
+#         8x          14.24             2.04              2.41
+#
+# Without the pre-pass it plateaus at ~14 whatever the input resolution — an
+# 8x oversampled scan reached the detectors no cleaner than a 2x one, and
+# marginally worse. That surviving texture is exactly what the whitening and
+# surface stages respond to, so it is manufactured defect signal.
+#
+# The floor is just above 1.0 so the common case benefits: a 1200dpi scan
+# reduced to the 605dpi canonical is a ~2x downscale, and at a 2.0 floor it
+# missed the pre-pass by 0.0008.
+MIN_PREFILTER_DOWNSCALE = 1.1
+
+
+def _prefilter_for_downscale(
+    image: np.ndarray, corners: np.ndarray, size: tuple[int, int]
+) -> tuple[np.ndarray, np.ndarray]:
+    """Area-average the source down to roughly the warp's output scale.
+
+    Leaves the remaining reduction under 2x, which is the range INTER_LINEAR
+    handles correctly. Returns the (possibly unchanged) image and the corner
+    coordinates rescaled to match it.
+    """
+    width, height = size
+    tl, tr, br, bl = corners.astype(np.float64)
+    source_w = (np.linalg.norm(tr - tl) + np.linalg.norm(br - bl)) / 2.0
+    source_h = (np.linalg.norm(bl - tl) + np.linalg.norm(br - tr)) / 2.0
+    factor = min(source_w / max(width, 1), source_h / max(height, 1))
+    if factor < MIN_PREFILTER_DOWNSCALE:
+        return image, corners
+
+    # Scale so the card spans roughly the output size, leaving the warp a
+    # ~1:1 job. Deliberately not an integer factor: truncating 8.0 to 7 left
+    # a 1.14x residual for INTER_LINEAR to botch, and INTER_AREA handles a
+    # fractional reduction perfectly well.
+    #
+    # `factor` is the *smaller* of the two axis ratios, so a perspective-
+    # skewed quad is under-reduced rather than over-reduced — any remaining
+    # work is a downscale the warp can do, never an upscale that would blur.
+    h, w = image.shape[:2]
+    new_w = max(1, int(round(w / factor)))
+    new_h = max(1, int(round(h / factor)))
+    reduced = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    # Scale by what the resize actually did, not by 1/factor — rounding makes
+    # those differ, and a fraction of a pixel of corner error is a fraction of
+    # a millimetre of centering error.
+    scaled = corners.astype(np.float32) * np.array([new_w / w, new_h / h], dtype=np.float32)
+    return reduced, scaled
+
+
 def perspective_correct(image: np.ndarray, corners: np.ndarray, size: tuple[int, int]) -> np.ndarray:
     width, height = size
+    image, corners = _prefilter_for_downscale(image, corners, size)
     dst = np.array(
         [[0, 0], [width - 1, 0], [width - 1, height - 1], [0, height - 1]],
         dtype=np.float32,
     )
-    matrix = cv2.getPerspectiveTransform(corners, dst)
+    matrix = cv2.getPerspectiveTransform(corners.astype(np.float32), dst)
     return cv2.warpPerspective(image, matrix, (width, height))
 
 
@@ -329,6 +390,48 @@ def align_for_surface(image: np.ndarray, thresholds: dict) -> DetectResult:
 
     ok = all(g.passed for g in gates)
     return DetectResult(ok=ok, warped=warped, gates=gates, contour=corners)
+
+
+# The canonical warp is a measurement surface: 1500x2100 across a 63mm card,
+# ~605 dpi, and every threshold in thresholds.json is calibrated against it.
+# It is not a viewing surface. A 1200dpi scan carries about 2.5x that detail
+# per axis, and zooming into the canonical warp only interpolates what was
+# already thrown away — so a second warp is kept at the capture's own scale
+# for inspection. Nothing is ever measured from it.
+MAX_DETAIL_LONG_EDGE_PX = 6000
+
+
+def detail_warp(image: np.ndarray, corners: np.ndarray | None, thresholds: dict) -> np.ndarray | None:
+    """Perspective-correct the card at (roughly) the capture's own scale.
+
+    Returns None when there's nothing to gain — a capture at or below the
+    canonical resolution would only be upscaled, which adds bytes and no
+    detail.
+    """
+    if corners is None:
+        return None
+    cap_cfg = thresholds["capture"]
+    canonical_w, canonical_h = cap_cfg["canonical_width_px"], cap_cfg["canonical_height_px"]
+
+    quad = corners.astype(np.float64)
+    top = float(np.linalg.norm(quad[1] - quad[0]))
+    bottom = float(np.linalg.norm(quad[2] - quad[3]))
+    left = float(np.linalg.norm(quad[3] - quad[0]))
+    right = float(np.linalg.norm(quad[2] - quad[1]))
+    width = (top + bottom) / 2.0
+    height = (left + right) / 2.0
+    if width <= 0 or height <= 0:
+        return None
+
+    # Hold the canonical aspect rather than the measured one: the card is a
+    # known shape, and letting a pixel or two of corner error stretch the
+    # detail view would make it disagree with the overlay drawn on top of it.
+    scale = min(width / canonical_w, height / canonical_h)
+    scale = min(scale, MAX_DETAIL_LONG_EDGE_PX / canonical_h)
+    if scale <= 1.05:
+        return None
+    size = (int(round(canonical_w * scale)), int(round(canonical_h * scale)))
+    return perspective_correct(image, corners, size)
 
 
 def detect_and_normalize(image: np.ndarray, thresholds: dict) -> DetectResult:

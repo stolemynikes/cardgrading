@@ -22,13 +22,28 @@ MIN_SAMPLES_FOR_LOO = 10
 FEATURES = ["centering", "corners_edges", "surface", "min_sub_grade"]
 
 
+# The 1-10 grade is a coarse bucket: two cards that both land on 9 can be
+# very different cards. The score keeps the precision the pipeline already
+# computes (assemble_grade works in floats throughout and only rounds at the
+# end) and puts it on a 100-1000 range where one point is a visible step.
+# It is this tool's own number, derived from this tool's own sub-grades —
+# not any grading company's scale, and not comparable to one.
+MIN_SCORE = 100
+MAX_SCORE = 1000
+
+
+def grade_to_score(overall_grade: float) -> int:
+    return int(max(MIN_SCORE, min(MAX_SCORE, round(overall_grade * 100))))
+
+
 @dataclass
 class GradeEstimate:
     centering_grade: int | None  # None if borders were unmeasurable (borderless/full-art)
-    corners_edges_grade: int
+    corners_edges_grade: int | None
     surface_grade: int | None  # None if vision review didn't run
     overall_grade: float
     overall_grade_rounded: int
+    score: int
     note: str
 
     def to_dict(self) -> dict:
@@ -38,6 +53,7 @@ class GradeEstimate:
             "surface_grade": self.surface_grade,
             "overall_grade": round(self.overall_grade, 2),
             "overall_grade_rounded": self.overall_grade_rounded,
+            "score": self.score,
             "note": self.note,
         }
 
@@ -66,10 +82,11 @@ def _fitted_overall(fitted: dict, centering: int, corners_edges: int, surface: i
 
 def assemble_grade(
     centering_grade: int | None,
-    corners_edges_grade: int,
+    corners_edges_grade: int | None,
     surface_grade: int | None,
     thresholds: dict,
     surface_from_flat: bool = False,
+    dimensions_within_tolerance: bool | None = None,
 ) -> GradeEstimate:
     fitted = thresholds.get("scoring", {}).get("fitted_weights")
 
@@ -82,8 +99,12 @@ def assemble_grade(
             + (f", leave-one-out MAE {meta['loo_mae']:.2f})" if meta.get("loo_mae") is not None else ")")
         )
     else:
-        sub_grades = [corners_edges_grade]
+        sub_grades = []
         missing = []
+        if corners_edges_grade is not None:
+            sub_grades.append(corners_edges_grade)
+        else:
+            missing.append("corners/edges (no measurable border — full-art card or a capture where the border couldn't be located)")
         if centering_grade is not None:
             sub_grades.append(centering_grade)
         else:
@@ -96,10 +117,28 @@ def assemble_grade(
             note = f"overall estimate excludes {'; '.join(missing)} — less reliable"
         else:
             note = "all sub-grades included; overall estimate is indicative, not definitive"
+        if not sub_grades:
+            # Nothing measurable at all. Better to say so than to invent a
+            # number from an empty list.
+            return GradeEstimate(centering_grade, corners_edges_grade, surface_grade, 0.0, 0, MIN_SCORE,
+                                 "nothing measurable in this capture — no grade can be estimated")
         overall = _heuristic_overall(sub_grades)
 
     if surface_from_flat and surface_grade is not None:
         note += " · surface judged from the flat shots only — flat lighting hides shallow scratches, treat it as an upper bound"
+
+    # A measurably miscut or trimmed card caps out regardless of how clean
+    # its surface and corners are — graders treat wrong dimensions as a
+    # defect of the card itself, not of its condition. Only applied when
+    # dimensions were actually measured (a known-DPI scan); an unmeasured
+    # card is left alone rather than assumed good or bad.
+    if dimensions_within_tolerance is False:
+        cap = thresholds.get("dimensions", {}).get("miscut_grade_cap", 8.0)
+        if overall > cap:
+            overall = cap
+            note += f" · capped at {cap:g} — card measures outside cut tolerance (miscut or trimmed)"
+        else:
+            note += " · card measures outside cut tolerance (miscut or trimmed)"
 
     overall = max(1.0, min(10.0, overall))
 
@@ -109,6 +148,7 @@ def assemble_grade(
         surface_grade=surface_grade,
         overall_grade=overall,
         overall_grade_rounded=round(overall),
+        score=grade_to_score(overall),
         note=note,
     )
 

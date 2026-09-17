@@ -1,293 +1,1458 @@
+/* Card Pre-Grader — frosted acrylic.
+ *
+ * One material system in two finishes: white acrylic on a near-white canvas,
+ * smoked navy acrylic on a deep one. Geometry, type, radii, borders, shadows
+ * and interaction are identical between them — only the material changes.
+ *
+ * Two rules the rest of the file answers to:
+ *
+ * 1. The accent never borrows the grade vocabulary. `gradeColor()` maps
+ *    green/amber/red to grade quality, so a control tinted with any of them
+ *    reads as a verdict. The accent is a restrained indigo.
+ * 2. Nothing glassy goes over the card artwork. The cards are the subject;
+ *    the interface frames them and otherwise stays quiet.
+ */
+
 :root {
-  --bg: #0b0d10;
-  --panel: #14171c;
-  --panel-border: #262b33;
-  --text: #e6e9ee;
-  --muted: #8891a0;
-  --accent: #5b8cff;
-  --good: #35c47a;
-  --warn: #e8b84b;
-  --bad: #e05a5a;
-  --mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light dark;
+
+  /* ---- geometry: identical in both finishes ---- */
+  --radius-lg: 24px;   /* large surfaces, matching the reference */
+  --radius: 18px;
+  --radius-ctl: 14px;
+  --radius-sm: 12px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Calm, not springy. Long enough to read as considered, short enough to
+   * stay out of the way. */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur: 220ms;
+  --dur-fast: 160ms;
+
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, "Segoe UI", sans-serif;
+  /* Reserved for figures only. Every number in this report is a measurement,
+   * and proportional digits make a column of them jitter as values change. */
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+
+  --z-sticky: 40;
+  --z-lightbox: 1000;
+}
+
+/* ---------- light: frosted white acrylic ----------
+ * The canvas is cooler and a shade darker than the surfaces on purpose.
+ * Sampled off the reference, its panels sit at #e8e9eb-#f3f3f4 over a
+ * ~#eaecef ground — roughly 20 levels of separation. An earlier pass had
+ * six, and the result read flat: glass only looks lifted if there is
+ * something measurably darker underneath it. */
+:root {
+  --bg: #eaecef;
+  --bg-deep: #e5e8ec;
+
+  --glass: rgba(255, 255, 255, 0.58);
+  --glass-strong: rgba(255, 255, 255, 0.76);
+  --glass-sunken: rgba(255, 255, 255, 0.32);
+  --glass-blur: blur(24px) saturate(118%);
+
+  /* A sheet of glass lit from above is brighter along its top edge and
+   * falls off toward the bottom. Measured on the reference, its panels ramp
+   * 11-22 levels over their height; a flat fill measures 0-1 and is the
+   * main thing that makes translucency read as a tinted rectangle rather
+   * than as material. Each gradient averages to the flat value above, so
+   * text contrast is unchanged. */
+  /* Ends on a faint dark tint, not on less white. White-only alpha bottoms
+   * out at the canvas value and can only ramp ~4 levels; the reference's
+   * panels finish *below* their canvas (243 -> 232 over a 236 ground), which
+   * is what gives the sheet a bottom edge instead of letting it fade out. */
+  /* Three layers, not one. The vertical ramp alone reads as a tinted
+   * rectangle; what makes it glass is a diagonal reflection falling from the
+   * top-left and a soft specular edge along the top, each too faint to
+   * notice on its own. Stacked as background layers rather than a
+   * pseudo-element, so no element needs repositioning. */
+  --surface:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42) 0%, rgba(255, 255, 255, 0) 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.66) 0%, rgba(20, 28, 45, 0.032) 100%);
+  --surface-strong:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 18%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(20, 28, 45, 0.022) 100%);
+
+  /* Two borders, not one: a near-white hairline reads as the lit top edge of
+   * the sheet, and a faint neutral one keeps the surface from dissolving
+   * into a near-white canvas. */
+  /* White, now that the shadow carries the separation. A neutral-dark border
+   * reads as an outline drawn around a shape; a white one reads as the lit
+   * edge of a sheet, which is the whole point. */
+  --border: rgba(255, 255, 255, 0.66);
+  --border-strong: rgba(255, 255, 255, 0.88);
+  --edge-light: rgba(255, 255, 255, 0.95);
+  /* Kept for the few places that need a visible rule rather than an edge. */
+  --rule: rgba(16, 24, 40, 0.09);
+
+  --text: #16202f;
+  --muted: #5d6a7e;
+  /* Tertiary, not decorative: section headings, "SCORE / 1000" and the
+   * attribute labels all use it, so it carries meaning and has to clear AA
+   * against the composited glass (#fcfcfb), not merely look quiet. The
+   * lighter grey this started at measured 2.99:1. */
+  --faint: #667081;
+
+  --accent: #5566e0;
+  --accent-soft: rgba(85, 102, 224, 0.1);
+  --accent-text: #4152c8;
+  --on-accent: #ffffff;
+
+  --good: #14875a;
+  --warn: #9a6a12;
+  --bad: #bb392c;
+
+  /* Deep enough to lift. Walking down off a panel in the reference, the
+   * canvas dips 22 levels below the surface and recovers over ~28px; the
+   * calmer of its two light layouts dips ~5. An earlier pass used 0.03-0.06
+   * alpha and produced a 2-level dip — technically a shadow, visually
+   * nothing, and the reason the panels sat flat against the canvas instead
+   * of above it. */
+  --shadow-low: 0 1px 2px rgba(16, 24, 40, 0.05), 0 6px 16px rgba(16, 24, 40, 0.06);
+  --shadow: 0 2px 4px rgba(16, 24, 40, 0.05), 0 12px 32px rgba(16, 24, 40, 0.10);
+  --shadow-high: 0 2px 6px rgba(16, 24, 40, 0.06), 0 24px 56px rgba(16, 24, 40, 0.13);
+  --inner-top: inset 0 1px 0 var(--edge-light);
+  --frame-bg: #e3e5e9;
+}
+
+/* ---------- dark: smoked navy acrylic ----------
+ * The palette is declared once here, prefixed, and aliased by the two
+ * selectors below. A theme that can be set explicitly *or* follow the system
+ * needs its values reachable from inside a media query and from outside it,
+ * and CSS offers no way to share one declaration block across both — so the
+ * aliasing is duplicated and the values, which are the part worth protecting
+ * from drift, are not.
+ */
+:root {
+
+  --d-bg: #0c1219;
+  --d-bg-deep: #0a0f15;
+
+  --d-glass: rgba(21, 29, 40, 0.72);
+  --d-glass-strong: rgba(29, 39, 52, 0.82);
+  --d-glass-sunken: rgba(9, 14, 20, 0.5);
+  --d-glass-blur: blur(24px) saturate(125%);
+
+  /* Proportionally stronger than light: the reference's dark panels ramp
+  * 17-26 levels off a much lower base, which is what stops smoked glass
+  * looking like flat charcoal. */
+  /* Endpoints chosen against contrast, not by eye: this ramps ~23 levels,
+  * inside the reference's 17-26 band, and leaves the weakest text token
+  * at 4.59:1 where the surface is lightest. One step deeper measured a
+  * nicer ramp and dropped it to 4.19:1. */
+  /* Same three layers, but an order of magnitude weaker. Smoked glass
+  * reflects far less than frosted white, and there is a hard ceiling
+  * here: the highlights peak at the panel's top-left, which is exactly
+  * where a heading sits. At a fifth of the light values the lightest
+  * point measured 4.26:1 and failed. */
+  --d-surface:
+  linear-gradient(135deg, rgba(255, 255, 255, 0.018) 0%, rgba(255, 255, 255, 0) 42%),
+  linear-gradient(180deg, rgba(255, 255, 255, 0.014) 0%, rgba(255, 255, 255, 0) 18%),
+  linear-gradient(180deg, rgba(30, 40, 54, 0.76) 0%, rgba(12, 17, 24, 0.72) 100%);
+  --d-surface-strong:
+  linear-gradient(135deg, rgba(255, 255, 255, 0.045) 0%, rgba(255, 255, 255, 0) 42%),
+  linear-gradient(180deg, rgba(255, 255, 255, 0.035) 0%, rgba(255, 255, 255, 0) 18%),
+  linear-gradient(180deg, rgba(45, 59, 78, 0.85) 0%, rgba(18, 25, 34, 0.80) 100%);
+
+  --d-border: rgba(255, 255, 255, 0.08);
+  --d-border-strong: rgba(255, 255, 255, 0.14);
+  --d-edge-light: rgba(255, 255, 255, 0.07);
+  --d-rule: rgba(255, 255, 255, 0.08);
+
+  --d-text: #e8ecf3;
+  --d-muted: #97a3b6;
+  --d-faint: #8390ab;   /* 4.31:1 before — same reasoning as light */
+
+  --d-accent: #7b8bf0;
+  --d-accent-soft: rgba(123, 139, 240, 0.14);
+  --d-accent-text: #a3aef7;
+  --d-on-accent: #0c1220;
+
+  --d-good: #4ade9a;
+  --d-warn: #eac272;
+  --d-bad: #f58a85;
+
+  /* Dark carries less of its separation in shadow and more in tone — there
+  * is less room below the canvas to cast into — but it still needs the
+  * contact edge to read. */
+  --d-shadow-low: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 16px rgba(0, 0, 0, 0.24);
+  --d-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.34);
+  --d-shadow-high: 0 2px 6px rgba(0, 0, 0, 0.34), 0 24px 56px rgba(0, 0, 0, 0.44);
+  --d-inner-top: inset 0 1px 0 var(--edge-light);
+  --d-frame-bg: #070b11;
+
+}
+
+/* Following the system, unless the user has explicitly asked for light. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--d-bg);
+    --bg-deep: var(--d-bg-deep);
+    --glass: var(--d-glass);
+    --glass-strong: var(--d-glass-strong);
+    --glass-sunken: var(--d-glass-sunken);
+    --glass-blur: var(--d-glass-blur);
+    --surface: var(--d-surface);
+    --surface-strong: var(--d-surface-strong);
+    --border: var(--d-border);
+    --border-strong: var(--d-border-strong);
+    --edge-light: var(--d-edge-light);
+    --rule: var(--d-rule);
+    --text: var(--d-text);
+    --muted: var(--d-muted);
+    --faint: var(--d-faint);
+    --accent: var(--d-accent);
+    --accent-soft: var(--d-accent-soft);
+    --accent-text: var(--d-accent-text);
+    --on-accent: var(--d-on-accent);
+    --good: var(--d-good);
+    --warn: var(--d-warn);
+    --bad: var(--d-bad);
+    --shadow-low: var(--d-shadow-low);
+    --shadow: var(--d-shadow);
+    --shadow-high: var(--d-shadow-high);
+    --inner-top: var(--d-inner-top);
+    --frame-bg: var(--d-frame-bg);
+  }
+}
+
+/* An explicit choice, which beats the system either way. */
+:root[data-theme="dark"] {
+    --bg: var(--d-bg);
+    --bg-deep: var(--d-bg-deep);
+    --glass: var(--d-glass);
+    --glass-strong: var(--d-glass-strong);
+    --glass-sunken: var(--d-glass-sunken);
+    --glass-blur: var(--d-glass-blur);
+    --surface: var(--d-surface);
+    --surface-strong: var(--d-surface-strong);
+    --border: var(--d-border);
+    --border-strong: var(--d-border-strong);
+    --edge-light: var(--d-edge-light);
+    --rule: var(--d-rule);
+    --text: var(--d-text);
+    --muted: var(--d-muted);
+    --faint: var(--d-faint);
+    --accent: var(--d-accent);
+    --accent-soft: var(--d-accent-soft);
+    --accent-text: var(--d-accent-text);
+    --on-accent: var(--d-on-accent);
+    --good: var(--d-good);
+    --warn: var(--d-warn);
+    --bad: var(--d-bad);
+    --shadow-low: var(--d-shadow-low);
+    --shadow: var(--d-shadow);
+    --shadow-high: var(--d-shadow-high);
+    --inner-top: var(--d-inner-top);
+    --frame-bg: var(--d-frame-bg);
+}
+
+/* Legacy aliases — older markup and the offline report export reference these. */
+:root {
+  --panel: var(--glass);
+  --panel-border: var(--border);
+  --accent-glow: var(--accent-soft);
+  --bg-base: var(--bg);
+  --bg-elevated: var(--glass-strong);
 }
 
 * { box-sizing: border-box; }
+
+/* The `hidden` attribute is how this app collapses slots, empty previews and
+ * every view it isn't showing, but the UA rule behind it is only
+ * `display: none` at element strength — any later `display:` silently beats
+ * it. Restated once, with enough weight to survive everything below. */
+[hidden] { display: none !important; }
+
+/* Every image here is a 1500x2100 canonical render. Without a blanket cap one
+ * of them sizes its grid column to its intrinsic width and the page grows past
+ * the viewport. Grid and flex children need min-width:0 for the same reason —
+ * their default `auto` minimum is the content's min-content width. */
+img { max-width: 100%; height: auto; display: block; }
+
+.side-by-side > *, .grade-header > *, .ding-row > *, .saved-link > *,
+.centering-card, .ce-card, .surface-card, .cardvision-card { min-width: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
 
 body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.55;
+  letter-spacing: -0.006em;
   margin: 0;
-  padding: 0 0 3rem;
-  min-height: 100vh;
+  padding: 0 0 var(--space-7);
+  min-height: 100dvh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
+/* ---------- canvas ----------
+ * Deliberately almost flat. The glass reads as a material because of its
+ * edges, blur and elevation — not because something colourful is moving
+ * behind it. The atmospheric tint is at the threshold of visibility. */
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgba(120, 138, 235, 0.07), transparent 62%),
+    linear-gradient(180deg, var(--bg) 0%, var(--bg-deep) 100%);
+}
+.ambient-blob { display: none; }
+
+/* ---------- the material ---------- */
+.protocol-hint, .slot, .centering-card, .ce-card, .surface-card, .cardvision-card,
+.ding-card, .saved-link, .permalink, .subgrade-tile, #scanner-fields,
+.market-line, .card-identity, .attr-strip, .section-bar, .viewer-slider {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), var(--inner-top);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+/* ---------- header ---------- */
 .app-header {
-  padding: 1.5rem 1rem 1rem;
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  padding: var(--space-4) var(--space-4) var(--space-3);
   text-align: center;
-  border-bottom: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
 }
-.app-header h1 { margin: 0; font-size: 1.3rem; font-weight: 600; letter-spacing: 0.02em; }
-.tagline { margin: 0.25rem 0 0; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; }
+.app-header h1 {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.tagline {
+  margin: 3px 0 0;
+  color: var(--faint);
+  font-size: 0.66rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
 
-main { max-width: 720px; margin: 0 auto; padding: 1rem; }
-
+main { max-width: 760px; margin: 0 auto; padding: var(--space-5) var(--space-4); }
 .view[hidden] { display: none; }
 
-.protocol-hint {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 1rem;
-  line-height: 1.5;
+.report-section, .grade-header, .permalink, #saved-reports {
+  animation: rise var(--dur) var(--ease) both;
+}
+.report-section:nth-of-type(1) { animation-delay: 30ms; }
+.report-section:nth-of-type(2) { animation-delay: 60ms; }
+.report-section:nth-of-type(3) { animation-delay: 90ms; }
+.report-section:nth-of-type(n + 4) { animation-delay: 120ms; }
+@keyframes rise {
+  from { opacity: 0; transform: translate3d(0, 8px, 0); }
+  to { opacity: 1; transform: none; }
 }
 
-.slots {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-bottom: 1rem;
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.muted { color: var(--muted); }
+
+h2 {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+  margin: 0 0 var(--space-3);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.report-section { margin-bottom: var(--space-6); }
+
+/* ---------- controls ---------- */
+.primary-btn, .secondary-btn {
+  font-family: inherit;
+  font-size: 0.92rem;
+  font-weight: 550;
+  letter-spacing: -0.006em;
+  border-radius: var(--radius-ctl);
+  min-height: 48px;
+  padding: 0 var(--space-5);
+  cursor: pointer;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease),
+    background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  touch-action: manipulation;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
 }
 
-.slot {
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  padding: 0.75rem;
+.primary-btn {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: var(--shadow-low), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  margin-top: var(--space-4);
 }
-.slot-label { display: block; font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
-.slot-body { position: relative; aspect-ratio: 63 / 88; background: #06070a; border-radius: 6px; overflow: hidden; display: flex; align-items: center; justify-content: center; }
-.slot-body input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.slot-body .thumb { width: 100%; height: 100%; object-fit: cover; }
-.slot-placeholder { color: var(--muted); font-size: 0.8rem; pointer-events: none; text-align: center; padding: 0 0.5rem; }
-.slot-error { color: var(--bad); font-size: 0.78rem; margin-top: 0.5rem; line-height: 1.4; }
+.primary-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--accent) 88%, white);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.primary-btn:active:not(:disabled) { transform: translateY(0); }
+.primary-btn:disabled {
+  cursor: not-allowed;
+  background: var(--glass-sunken);
+  color: var(--faint);
+  border-color: var(--border);
+  box-shadow: none;
+}
+
+.secondary-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow-low), var(--inner-top);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.secondary-btn:hover { background: var(--surface-strong); border-color: var(--border-strong); }
+.secondary-btn:active { transform: translateY(0.5px); }
 
 .text-toggle {
   background: none;
   border: none;
-  color: var(--accent);
-  font-size: 0.85rem;
-  padding: 0.5rem 0;
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 0.83rem;
+  font-weight: 500;
   cursor: pointer;
+  padding: var(--space-2) 0;
+  min-height: 44px;
+  transition: color var(--dur-fast) var(--ease);
+}
+.text-toggle:hover { color: var(--accent); }
+
+/* Restyled, never removed. */
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.report-actions { display: flex; gap: var(--space-3); margin-top: var(--space-6); }
+.report-actions .secondary-btn, .report-actions .primary-btn { flex: 1; margin-top: 0; width: auto; }
+
+/* ---------- capture ---------- */
+.protocol-hint {
+  padding: var(--space-4);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--muted);
+  margin-bottom: var(--space-4);
+}
+.protocol-hint strong { color: var(--text); font-weight: 600; }
+.protocol-hint code { font-family: var(--mono); font-size: 0.76rem; color: var(--accent-text); }
+
+.mode-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.slots { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); margin-bottom: var(--space-3); }
+.slot { padding: var(--space-3); transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease); }
+.slot:hover { border-color: var(--border-strong); background: var(--surface-strong); }
+.slot-label {
   display: block;
-}
-
-.mode-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.5rem; }
-.mode-row .text-toggle { padding: 0.25rem 0; }
-
-.viewfinder-wrap {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  background: #000;
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 0.5rem;
-}
-#camera-video { width: 100%; height: 100%; object-fit: cover; display: block; }
-.card-guide {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 72%;
-  aspect-ratio: 63 / 88;
-  max-height: 85%;
-  transform: translate(-50%, -50%);
-  border: 2px solid rgba(91, 140, 255, 0.85);
-  border-radius: 8px;
-  box-shadow: 0 0 0 999px rgba(0, 0, 0, 0.45);
-  pointer-events: none;
-  transition: border-color 0.15s ease;
-}
-.card-guide--good {
-  border-color: rgba(53, 196, 122, 0.9);
-}
-.card-guide--warning {
-  border-color: rgba(232, 184, 75, 0.95);
-  border-width: 3px;
-}
-.card-guide--error {
-  border-color: rgba(224, 90, 90, 0.95);
-  border-width: 3px;
-}
-.precheck-banner {
-  position: absolute;
-  bottom: 0.75rem;
-  left: 0.75rem;
-  right: 0.75rem;
-  background: rgba(232, 184, 75, 0.92);
-  color: #06070a;
-  font-size: 0.8rem;
-  font-weight: 600;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  text-align: center;
-}
-.precheck-banner--error {
-  background: rgba(224, 90, 90, 0.92);
-}
-.zoom-row { display: flex; align-items: center; gap: 0.6rem; margin: 0 0 0.5rem; }
-.zoom-row[hidden] { display: none; }
-.zoom-label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
-.zoom-row input[type=range] { flex: 1; accent-color: var(--accent); }
-.zoom-value { font-size: 0.8rem; color: var(--muted); min-width: 2.5rem; text-align: right; }
-
-.step-indicator { text-align: center; font-size: 0.85rem; color: var(--muted); margin: 0 0 0.5rem; font-family: var(--mono); }
-
-.thumb-strip { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
-.capture-thumb {
-  position: relative;
-  width: 56px;
-  aspect-ratio: 63 / 88;
-  border-radius: 6px;
-  overflow: hidden;
-  border: 1px solid var(--panel-border);
-  cursor: pointer;
-}
-.capture-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.capture-thumb-label {
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  background: rgba(0, 0, 0, 0.65);
-  color: var(--text);
-  font-size: 0.55rem;
-  text-align: center;
-  padding: 1px 0;
-}
-
-.banner { border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; margin: 0.75rem 0; line-height: 1.4; }
-.banner-error { background: rgba(224, 90, 90, 0.12); border: 1px solid rgba(224, 90, 90, 0.4); color: var(--bad); white-space: pre-line; }
-.banner-warn { background: rgba(232, 184, 75, 0.12); border: 1px solid rgba(232, 184, 75, 0.4); color: var(--warn); }
-
-.primary-btn, .secondary-btn {
-  font-size: 1rem;
-  font-weight: 600;
-  padding: 0.9rem 1.25rem;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-  width: 100%;
-  margin-top: 0.5rem;
-}
-.primary-btn { background: var(--accent); color: #06070a; }
-.primary-btn:disabled { background: var(--panel-border); color: var(--muted); cursor: not-allowed; }
-.secondary-btn { background: var(--panel); color: var(--text); border: 1px solid var(--panel-border); }
-
-#processing-view { text-align: center; padding: 3rem 1rem; }
-.spinner {
-  width: 40px; height: 40px; margin: 0 auto 1.5rem;
-  border: 3px solid var(--panel-border);
-  border-top-color: var(--accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-#processing-message { color: var(--muted); font-family: var(--mono); font-size: 0.9rem; }
-
-.grade-header { display: flex; align-items: center; gap: 1.25rem; padding: 1rem 0 1.5rem; border-bottom: 1px solid var(--panel-border); margin-bottom: 1rem; }
-.overall-grade { font-family: var(--mono); font-size: 3.5rem; font-weight: 700; line-height: 1; }
-.overall-precise { font-family: var(--mono); color: var(--muted); font-size: 0.9rem; }
-.overall-note { color: var(--muted); font-size: 0.78rem; margin-top: 0.35rem; line-height: 1.4; }
-
-.subgrade-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem; margin-bottom: 1.5rem; }
-.subgrade-tile { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 0.75rem; text-align: center; }
-.subgrade-label { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.35rem; }
-.subgrade-value { font-family: var(--mono); font-size: 1.6rem; font-weight: 700; }
-.subgrade-value.muted { color: var(--muted); font-size: 1.1rem; }
-
-.report-section { margin-bottom: 1.75rem; }
-.report-section h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); border-bottom: 1px solid var(--panel-border); padding-bottom: 0.5rem; margin-bottom: 0.75rem; }
-.indicative-tag { font-size: 0.7rem; text-transform: none; letter-spacing: 0; background: rgba(232, 184, 75, 0.15); color: var(--warn); padding: 0.15rem 0.5rem; border-radius: 20px; margin-left: 0.5rem; }
-
-.side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-@media (max-width: 480px) { .side-by-side { grid-template-columns: 1fr; } }
-
-.centering-card, .ce-card, .surface-card { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px; padding: 0.75rem; margin-bottom: 0.75rem; }
-.centering-card-header { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-.overlay-img { width: 100%; border-radius: 6px; margin-bottom: 0.5rem; display: block; }
-.axis-row { display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; }
-.axis-label { color: var(--muted); width: 1.2rem; }
-.mono { font-family: var(--mono); }
-.grade-pill { font-family: var(--mono); font-size: 0.8rem; font-weight: 700; }
-.grade-pill-sm { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
-
-.region-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.4rem; }
-.region-tile { text-align: center; }
-.region-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: #06070a; display: block; }
-.region-label { font-size: 0.65rem; color: var(--muted); margin-top: 0.2rem; }
-.region-pct { font-size: 0.72rem; }
-
-.defect-slider-container { position: relative; border-radius: 6px; overflow: hidden; margin-bottom: 0.5rem; }
-.defect-base, .defect-overlay { width: 100%; display: block; }
-.defect-overlay { position: absolute; top: 0; left: 0; }
-.defect-slider { width: 100%; margin: 0.25rem 0 0.75rem; accent-color: var(--accent); }
-
-.vision-judgment { font-size: 0.82rem; margin-top: 0.5rem; }
-.vision-judgment ul { margin: 0.35rem 0 0; padding-left: 1.1rem; }
-.muted { color: var(--muted); }
-
-.report-actions { display: flex; gap: 0.5rem; margin-top: 1.5rem; }
-.report-actions button { flex: 1; }
-
-.card-identity { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.75rem 0 0.25rem; }
-.card-name { font-size: 1.05rem; font-weight: 700; }
-.card-id-conf { font-size: 0.72rem; }
-
-.market-line { font-size: 0.8rem; line-height: 1.5; padding: 0.35rem 0 0.75rem; border-bottom: 1px solid var(--panel-border); margin-bottom: 1rem; }
-
-.ding-marker {
-  font-size: 0.62rem;
-  font-weight: 700;
+  font-size: 0.68rem;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--warn);
-  background: rgba(232, 184, 75, 0.14);
-  border: 1px solid rgba(232, 184, 75, 0.4);
-  border-radius: 20px;
-  padding: 0.05rem 0.4rem;
-  margin-left: 0.35rem;
+  letter-spacing: 0.07em;
+  color: var(--faint);
+  margin-bottom: var(--space-2);
 }
-.region-tile--ding .region-thumb { outline: 2px solid var(--warn); outline-offset: -2px; }
-.region-label .ding-marker { padding: 0 0.3rem; margin-left: 0.15rem; }
-
-.lightbox {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: rgba(4, 5, 8, 0.96);
-}
-.lightbox[hidden] { display: none; }
-.lightbox-stage {
-  position: absolute;
-  inset: 0;
+.slot-body {
+  position: relative;
+  aspect-ratio: 63 / 88;
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  touch-action: none; /* we handle pan/pinch ourselves */
+  background: var(--glass-sunken);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
 }
-#lightbox-img {
-  max-width: 100%;
-  max-height: 100%;
-  transform-origin: 0 0;
-  user-select: none;
-  -webkit-user-drag: none;
+.slot-body input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; z-index: 2; }
+.slot-placeholder { color: var(--faint); font-size: 0.82rem; }
+.thumb { width: 100%; height: 100%; object-fit: cover; }
+.slot-error { margin-top: var(--space-2); color: var(--bad); font-size: 0.76rem; line-height: 1.45; }
+
+/* ---------- camera ---------- */
+.viewfinder-wrap {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--frame-bg);
+  aspect-ratio: 3 / 4;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
 }
+#camera-video { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.card-guide {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 62%;
+  aspect-ratio: 63 / 88;
+  border: 2px dashed rgba(255, 255, 255, 0.55);
+  border-radius: var(--radius-sm);
+  pointer-events: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.card-guide--good { border-color: var(--good); border-style: solid; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.3); }
+.card-guide--warning { border-color: var(--warn); }
+.card-guide--error { border-color: var(--bad); }
+
+.precheck-banner {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--border);
+  font-size: 0.79rem;
+  text-align: center;
+}
+.precheck-banner--error { border-color: color-mix(in srgb, var(--bad) 40%, transparent); color: var(--bad); }
+
+.zoom-row { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-3); }
+.zoom-label, .zoom-value { color: var(--muted); font-size: 0.76rem; }
+#zoom-slider { flex: 1; accent-color: var(--accent); }
+
+.step-indicator { text-align: center; color: var(--muted); font-size: 0.86rem; margin: var(--space-4) 0 0; }
+
+.thumb-strip { display: flex; gap: var(--space-2); margin-top: var(--space-4); flex-wrap: wrap; }
+.capture-thumb {
+  position: relative;
+  width: 64px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  box-shadow: var(--shadow-low);
+}
+.capture-thumb img { width: 100%; display: block; }
+.capture-thumb-label { display: block; font-size: 0.64rem; text-align: center; color: var(--faint); padding: 3px 0; }
+
+/* ---------- scanner extras ---------- */
+#scanner-mode { margin-bottom: var(--space-4); }
+#scanner-fields { padding: var(--space-4); margin-top: var(--space-2); }
+.field-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.field-label { font-size: 0.85rem; min-width: 8.5rem; }
+.field-row input[type="number"] {
+  background: var(--glass-sunken);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  height: 44px;
+  width: 7.5rem;
+  font-family: var(--mono);
+  font-size: 16px;   /* below 16px triggers iOS auto-zoom on focus */
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.field-row input[type="number"]:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  background: var(--glass-strong);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.field-row input[type="file"] { color: var(--muted); font-size: 0.8rem; max-width: 100%; flex: 1; min-width: 0; }
+/* The one control the browser draws in its own chrome — restyled in place, so
+ * the accessible name and keyboard behaviour stay native. */
+.field-row input[type="file"]::file-selector-button {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 550;
+  color: var(--text);
+  background: var(--glass-strong);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-3);
+  height: 36px;
+  margin-right: var(--space-3);
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.field-row input[type="file"]::file-selector-button:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-soft);
+}
+.field-hint { color: var(--muted); font-size: 0.77rem; line-height: 1.5; margin: 0; }
+.field-hint code { font-family: var(--mono); font-size: 0.74rem; color: var(--accent-text); }
+
+/* ---------- processing ---------- */
+#processing-view { text-align: center; padding: var(--space-7) 0; }
+.spinner {
+  width: 34px;
+  height: 34px;
+  margin: 0 auto var(--space-4);
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 780ms linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+#processing-message { color: var(--muted); font-size: 0.92rem; }
+
+/* ---------- banners ---------- */
+.banner {
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  margin-bottom: var(--space-3);
+  border: 1px solid;
+}
+.banner-error { background: color-mix(in srgb, var(--bad) 9%, transparent); border-color: color-mix(in srgb, var(--bad) 28%, transparent); color: var(--bad); }
+.banner-warn { background: color-mix(in srgb, var(--warn) 10%, transparent); border-color: color-mix(in srgb, var(--warn) 28%, transparent); color: var(--warn); }
+.banner-ok { background: color-mix(in srgb, var(--good) 9%, transparent); border-color: color-mix(in srgb, var(--good) 26%, transparent); color: var(--good); }
+
+/* ---------- score ----------
+ * The one place given real presence, and it earns it by size and weight
+ * rather than by glow. */
+.grade-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-5);
+  margin-bottom: var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow), var(--inner-top);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  overflow: hidden;
+}
+
+.score-block { text-align: center; flex-shrink: 0; }
+.overall-score {
+  font-family: var(--mono);
+  font-size: clamp(2.9rem, 13vw, 4rem);
+  font-weight: 600;
+  line-height: 0.95;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+}
+.score-caption {
+  color: var(--faint);
+  font-size: 0.64rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-top: var(--space-2);
+}
+.overall-detail { min-width: 0; }
+.overall-grade-inline { font-size: 1.05rem; font-weight: 600; margin-bottom: var(--space-2); letter-spacing: -0.012em; }
+.overall-note { color: var(--muted); font-size: 0.8rem; line-height: 1.6; }
+.overall-grade { font-family: var(--mono); font-size: 2.8rem; font-weight: 600; line-height: 1; }
+.overall-precise { color: var(--muted); font-size: 0.9rem; }
+
+/* ---------- sub-grades ---------- */
+.subgrade-side { margin-bottom: var(--space-3); }
+.subgrade-side-label {
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: var(--space-2);
+}
+.subgrade-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
+.subgrade-tile {
+  padding: var(--space-3) var(--space-2);
+  text-align: center;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.subgrade-tile:hover { transform: translateY(-2px); box-shadow: var(--shadow), var(--inner-top); border-color: var(--border-strong); }
+.subgrade-label { color: var(--faint); font-size: 0.64rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+.subgrade-value { font-family: var(--mono); font-size: 1.5rem; font-weight: 600; font-variant-numeric: tabular-nums; margin-top: 3px; letter-spacing: -0.02em; }
+
+/* ---------- card viewer ----------
+ * The artwork is the subject. A hairline frame and a soft lift, nothing over
+ * the top of it. */
+.viewer { margin-bottom: var(--space-5); }
+.viewer-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+.viewer-side { margin: 0; min-width: 0; }
+.viewer-frame {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--frame-bg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  cursor: zoom-in;
+}
+.viewer-frame .defect-base { display: block; width: auto; max-width: 100%; max-height: 460px; }
+.viewer-frame .defect-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.viewer-caption { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+.viewer-side-label { font-size: 0.68rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); }
+
+.viewer-slider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-1) var(--space-4);
+  border-radius: var(--radius-pill);
+}
+.viewer-cert {
+  display: block;
+  width: fit-content;
+  margin: var(--space-3) auto 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  background: var(--glass-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 4px var(--space-3);
+}
+.viewer-note { font-size: 0.77rem; line-height: 1.55; text-align: center; margin: var(--space-3) 0 0; color: var(--muted); }
+
+/* ---------- attribute strip ---------- */
+.attr-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-1); padding: var(--space-4) var(--space-2); }
+.attr-col { display: flex; flex-direction: column; align-items: center; gap: 7px; text-align: center; min-width: 0; padding: 0 2px; }
+.attr-col + .attr-col { border-left: 1px solid var(--rule); }
+.attr-icon { color: var(--accent-text); }
+.attr-icon svg { width: 21px; height: 21px; }
+.attr-label { font-size: 0.6rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); }
+.attr-value { font-size: 0.66rem; line-height: 1.55; color: var(--text); }
+
+/* ---------- section bar ---------- */
+.section-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-ctl);
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  text-align: center;
+  margin-bottom: var(--space-3);
+}
+.section-bar-icon { display: inline-flex; color: var(--accent-text); }
+.section-bar-icon svg { width: 15px; height: 15px; }
+.empty-note { font-size: 0.8rem; text-align: center; margin: 0 0 var(--space-4); color: var(--muted); }
+
+/* ---------- DINGS ---------- */
+.ding-gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: var(--space-3); }
+.ding-card {
+  margin: 0;
+  overflow: hidden;
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.ding-card:hover { transform: translateY(-2px); box-shadow: var(--shadow), var(--inner-top); border-color: var(--border-strong); }
+.ding-crop { position: relative; aspect-ratio: 1; background: var(--frame-bg); display: flex; align-items: center; justify-content: center; }
+.ding-crop img { width: 100%; height: 100%; object-fit: cover; cursor: zoom-in; }
+.ding-crop-empty { font-size: 0.7rem; color: var(--faint); }
+.ding-grade {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border: 1px solid var(--border);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.ding-caption { display: flex; flex-direction: column; gap: 3px; padding: var(--space-3); }
+.ding-region { font-size: 0.62rem; letter-spacing: 0.05em; color: var(--faint); }
+.ding-region strong { color: var(--text); font-weight: 600; }
+.ding-type { font-size: 0.85rem; font-weight: 600; letter-spacing: -0.008em; }
+.ding-caption .ding-detail { font-size: 0.72rem; line-height: 1.5; color: var(--muted); }
+.ding-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.ding-row { display: flex; gap: var(--space-3); align-items: center; padding: var(--space-3); }
+.ding-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: var(--radius-sm); flex-shrink: 0; background: var(--frame-bg); border: 1px solid var(--border); }
+.ding-body { min-width: 0; }
+.ding-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-2); }
+.ding-title { font-size: 0.88rem; font-weight: 600; text-transform: capitalize; }
+.ding-detail { font-size: 0.78rem; line-height: 1.5; margin-top: 2px; }
+.attribute-chip {
+  font-size: 0.62rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  background: var(--glass-sunken);
+  border: 1px solid var(--border);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+}
+.ding-marker {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent);
+  border-radius: var(--radius-pill);
+  padding: 1px var(--space-2);
+}
+.region-label .ding-marker { padding: 0 6px; margin-left: 2px; }
+
+/* ---------- detail cards ---------- */
+.cardvision-card, .centering-card, .ce-card, .surface-card { padding: var(--space-4); }
+.centering-card-header { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); font-size: 0.88rem; font-weight: 600; margin-bottom: var(--space-3); letter-spacing: -0.008em; }
+
+.defect-slider-container {
+  position: relative;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--frame-bg);
+  border: 1px solid var(--border);
+}
+.defect-slider-container .defect-base { display: block; width: auto; max-width: 100%; max-height: 400px; }
+.defect-slider-container .defect-overlay { position: absolute; inset: 0; width: 100%; height: 100%; }
+.defect-base, .defect-overlay { width: 100%; display: block; }
+
+.slider-row { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-3) 0 var(--space-2); }
+.slider-end { color: var(--faint); font-size: 0.68rem; white-space: nowrap; }
+.slider-readout { color: var(--muted); font-size: 0.68rem; min-width: 2.6rem; text-align: right; }
+.cardvision-note { font-size: 0.75rem; line-height: 1.5; color: var(--muted); }
+
+/* The primary control in the report, dragged with a thumb — 44px of target. */
+.overlay-slider, .defect-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  flex: 1;
+  height: 44px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+.overlay-slider::-webkit-slider-runnable-track, .defect-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--border-strong) 100%);
+}
+.overlay-slider::-moz-range-track, .defect-slider::-moz-range-track {
+  height: 4px;
+  border-radius: var(--radius-pill);
+  background: linear-gradient(90deg, var(--accent) 0%, var(--border-strong) 100%);
+}
+.overlay-slider::-webkit-slider-thumb, .defect-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -9px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(16, 24, 40, 0.12);
+  box-shadow: 0 1px 4px rgba(16, 24, 40, 0.2);
+  transition: transform var(--dur-fast) var(--ease);
+}
+.overlay-slider::-moz-range-thumb, .defect-slider::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%; background: #fff; border: 1px solid rgba(16, 24, 40, 0.12);
+}
+.overlay-slider:active::-webkit-slider-thumb { transform: scale(1.1); }
+
+.method-chip {
+  font-size: 0.66rem;
+  font-weight: 500;
+  background: var(--glass-sunken);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+}
+.method-chip--strong { background: color-mix(in srgb, var(--good) 11%, transparent); border-color: color-mix(in srgb, var(--good) 26%, transparent); color: var(--good); }
+.indicative-tag {
+  font-size: 0.64rem;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  background: color-mix(in srgb, var(--warn) 11%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 24%, transparent);
+  color: var(--warn);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+}
+
+/* ---------- layout helpers ---------- */
+.side-by-side { display: grid; grid-template-columns: 1fr; gap: var(--space-3); }
+@media (min-width: 640px) { .side-by-side { grid-template-columns: 1fr 1fr; } }
+
+.axis-row { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); flex-wrap: wrap; }
+.axis-label { color: var(--faint); font-size: 0.76rem; min-width: 5rem; }
+.grade-pill {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  background: var(--glass-sunken);
+  border: 1px solid var(--border);
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-pill);
+}
+.grade-pill-sm { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); }
+
+.region-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-2); }
+.region-tile {
+  text-align: center;
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) 3px;
+  border: 1px solid transparent;
+  transition: transform var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), background var(--dur-fast) var(--ease);
+}
+.region-tile:hover { transform: translateY(-1px); border-color: var(--border); background: var(--glass-sunken); }
+.region-tile--ding { border-color: color-mix(in srgb, var(--warn) 30%, transparent); background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.region-thumb { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; background: var(--frame-bg); cursor: zoom-in; }
+.region-label { font-size: 0.64rem; color: var(--faint); margin-top: 3px; }
+.region-pct { font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+
+.overlay-img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 400px;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--frame-bg);
+  cursor: zoom-in;
+  box-shadow: var(--shadow-low);
+}
+
+.vision-judgment { font-size: 0.8rem; line-height: 1.55; margin-top: var(--space-3); }
+.vision-judgment ul { margin: var(--space-2) 0 0; padding-left: var(--space-4); }
+.vision-judgment li { margin-bottom: 3px; }
+
+.card-identity { padding: var(--space-4); margin-bottom: var(--space-3); }
+.card-name { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; }
+.card-id-conf { color: var(--muted); font-size: 0.76rem; }
+.market-line { padding: var(--space-3) var(--space-4); margin-bottom: var(--space-3); font-size: 0.84rem; }
+
+/* Dimensions was the one section whose content sat bare on the canvas while
+ * every other section wrapped its content in a panel — and, inheriting the
+ * 16px body size, its note rendered larger than any other body text on the
+ * page. Both of its branches now use the same material as everything else.
+ * `div.muted` as a direct child matches only this section: the DINGS empty
+ * note is a <p>, and the centering card's note is nested inside a card. */
+.report-section > div.muted,
+.dimension-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow), var(--inner-top);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  padding: var(--space-4);
+}
+.report-section > div.muted { font-size: 0.84rem; line-height: 1.6; }
+.dimension-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-3); margin-bottom: var(--space-3); }
+.dimension-value { font-size: 1.1rem; font-weight: 600; }
+
+/* ---------- permalink ---------- */
+.permalink { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); padding: var(--space-3) var(--space-4); margin-bottom: var(--space-4); }
+.permalink-label { color: var(--faint); font-size: 0.64rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; }
+.permalink-url { color: var(--accent-text); font-size: 0.76rem; word-break: break-all; text-decoration: none; }
+.permalink-url:hover { text-decoration: underline; }
+.permalink-copy { min-height: 38px; padding: 0 var(--space-4); font-size: 0.78rem; margin-left: auto; border-radius: var(--radius-sm); }
+
+/* ---------- saved reports ---------- */
+#saved-reports { margin-top: var(--space-6); }
+.saved-heading { color: var(--faint); font-size: 0.68rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: var(--space-3); }
+.saved-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.saved-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  min-height: 52px;
+  text-decoration: none;
+  color: var(--text);
+  transition: transform var(--dur-fast) var(--ease), box-shadow var(--dur) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.saved-link:hover { transform: translateY(-1px); box-shadow: var(--shadow), var(--inner-top); border-color: var(--border-strong); }
+.saved-name { font-size: 0.88rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.saved-score { font-size: 0.88rem; font-weight: 600; color: var(--accent-text); font-variant-numeric: tabular-nums; }
+.saved-when { font-size: 0.7rem; color: var(--faint); }
+
+/* ---------- lightbox ---------- */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-lightbox);
+  background: color-mix(in srgb, var(--bg-deep) 82%, transparent);
+  -webkit-backdrop-filter: blur(28px) saturate(120%);
+  backdrop-filter: blur(28px) saturate(120%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fade var(--dur-fast) var(--ease);
+}
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+.lightbox[hidden] { display: none; }
+.lightbox-stage { width: 100%; height: 100%; overflow: hidden; display: flex; align-items: center; justify-content: center; touch-action: none; }
+#lightbox-img { max-width: 100%; max-height: 100%; transform-origin: center; will-change: transform; border-radius: var(--radius-sm); }
 .lightbox-close {
   position: absolute;
-  top: 0.75rem;
-  right: 0.75rem;
-  z-index: 51;
+  top: max(var(--space-4), env(safe-area-inset-top));
+  right: var(--space-4);
+  z-index: 1;
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  border: 1px solid var(--panel-border);
-  background: var(--panel);
+  border: 1px solid var(--border);
+  background: var(--glass-strong);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
   color: var(--text);
-  font-size: 1.4rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  box-shadow: var(--shadow-low), var(--inner-top);
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.lightbox-close:hover { background: var(--glass); border-color: var(--border-strong); }
+
+/* ---------- icons ---------- */
+.btn-icon svg, .saved-chevron svg, .lightbox-close svg { width: 1em; height: 1em; display: block; }
+.btn-icon { display: inline-flex; font-size: 1.02em; }
+.permalink-copy.is-done { color: var(--good); border-color: color-mix(in srgb, var(--good) 32%, transparent); }
+.saved-chevron { display: inline-flex; color: var(--faint); font-size: 1.05rem; flex-shrink: 0; transition: transform var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+.saved-link:hover .saved-chevron { transform: translateX(2px); color: var(--accent-text); }
+
+/* ---------- preferences ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Blur degrades badly where unsupported — fall back to an opaque surface
+ * rather than unreadable text over the canvas. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .protocol-hint, .slot, .centering-card, .ce-card, .surface-card, .cardvision-card,
+  .ding-card, .saved-link, .permalink, .subgrade-tile, #scanner-fields, .market-line,
+  .card-identity, .attr-strip, .section-bar, .viewer-slider, .grade-header,
+  .app-header, .secondary-btn, .lightbox-close {
+    background: var(--glass-strong);
+  }
+}
+
+@media (max-width: 400px) {
+  .attr-strip { grid-template-columns: repeat(3, 1fr); row-gap: var(--space-4); }
+  .attr-col:nth-child(3n + 1) { border-left: none; }
+}
+
+@media (min-width: 768px) {
+  main { padding: var(--space-6) var(--space-5); }
+  .app-header { padding: var(--space-5) var(--space-4); }
+  .app-header h1 { font-size: 1.1rem; }
+}
+
+/* ---------- theme control ----------
+ * A floating glass control: the brightest surface on the page, small shadow,
+ * clear but subtle edge. Positioned rather than placed in flow so the header's
+ * centred title stays centred. */
+.app-header { position: sticky; }
+.theme-toggle {
+  position: absolute;
+  top: 50%;
+  right: var(--space-4);
+  transform: translateY(-50%);
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-low), var(--inner-top);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.theme-toggle svg { width: 17px; height: 17px; display: block; }
+.theme-toggle:hover { color: var(--accent-text); border-color: var(--border-strong); box-shadow: var(--shadow), var(--inner-top); }
+.theme-toggle:active { transform: translateY(-50%) scale(0.95); }
+
+/* The tap target extends past the visual bounds rather than inflating them,
+ * so a 38px control still clears the 44px minimum. */
+.theme-toggle::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+}
+
+/* ---- manual centering ----
+ * A zoomable viewport with eight boundary handles over it. The canvas is
+ * transformed as a whole, so the lines — positioned as a percentage of the
+ * warp they annotate — stay on the pixels they point at through any zoom or
+ * pan without any per-line maths. */
+.centering-adjust { margin-top: var(--space-3); }
+
+.adjust-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.zoom-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-2, var(--frame-bg));
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1;
   cursor: pointer;
 }
+.zoom-btn:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); }
+.adjust-zoom { font-size: 0.78rem; color: var(--faint); min-width: 3.2em; text-align: center; }
+
+.adjust-viewport {
+  position: relative;
+  overflow: hidden;
+  height: 420px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--frame-bg);
+  box-shadow: var(--shadow-low);
+  touch-action: none; /* handles are dragged; don't scroll the page instead */
+  cursor: grab;
+}
+.adjust-viewport--panning { cursor: grabbing; }
+/* A press within reach of a line picks up the line, not the image — say so
+ * before the press rather than after it. */
+.adjust-viewport--over-line { cursor: move; }
+
+/* Positioned at the viewport's origin and moved entirely by the transform:
+ * one source of truth for where the canvas is, which is what lets a pointer
+ * position be read straight off getBoundingClientRect with no zoom maths. */
+/* Shrink-wraps the image, so the lines — positioned as a percentage of the
+ * canvas — stay on the pixels they annotate at any size. */
+.adjust-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+/* Dimensions are set in JS (fitImage) so the card is contained by both the
+ * viewport's width and its height. CSS height:100% fitted the height only,
+ * which let a tall viewport push the card wider than the screen — "Fit" then
+ * left it cropped, which is what it looked like when it "didn't work". */
+.adjust-img { display: block; }
+
+.adjust-line { position: absolute; }
+.adjust-line > i { position: absolute; inset: 0; display: block; }
+
+/* The grab area is much larger than the line: on a phone a 2px line is far
+ * under the 44px touch-target minimum. It sits on a child element so it
+ * doesn't inherit the line's own background. */
+.adjust-line > i::after { content: ""; position: absolute; inset: calc(-1 * var(--adjust-grab, 14px)); }
+
+/* One screen pixel, translucent. The line is an instrument for reading where
+ * a boundary falls, so it has to sit on the pixels without hiding them — a
+ * solid 2px bar with a 1px outline covered four pixels of the very edge you
+ * were trying to judge. The thin dark halo keeps a pale line legible over
+ * pale card stock without adding brightness of its own.
+ *
+ * The widths are counter-scaled against the canvas zoom in applyTransform:
+ * the whole canvas is transform-scaled, so a fixed 1px line would render as
+ * an 8px bar at 8x, burying the boundary you zoomed in to read. The var
+ * fallbacks here are the 1x values. */
+.adjust-line--v { top: 0; bottom: 0; width: var(--adjust-hairline, 1px); cursor: ew-resize; }
+.adjust-line--h { left: 0; right: 0; height: var(--adjust-hairline, 1px); cursor: ns-resize; }
+.adjust-line--inner > i { background: rgba(34, 221, 119, 0.62); box-shadow: 0 0 0 var(--adjust-halo, 0.5px) rgba(0, 0, 0, 0.3); }
+.adjust-line--outer > i { background: rgba(255, 170, 34, 0.62); box-shadow: 0 0 0 var(--adjust-halo, 0.5px) rgba(0, 0, 0, 0.3); }
+/* A card edge resting on the image edge is the normal case and says nothing;
+ * still grabbable, just not shouting. */
+.adjust-line--flush > i { opacity: 0.4; }
+/* Hovering or holding one brings it up to full strength, so the line you're
+ * working on is the only one asking for attention. */
+.adjust-line:hover > i { background: rgba(255, 255, 255, 0.85); }
+.adjust-line--dragging > i { background: rgba(255, 255, 255, 0.95); box-shadow: 0 0 0 var(--adjust-halo, 0.5px) currentColor; }
+.adjust-line--dragging.adjust-line--inner { color: rgba(34, 221, 119, 0.9); }
+.adjust-line--dragging.adjust-line--outer { color: rgba(255, 170, 34, 0.9); }
+.adjust-line:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  vertical-align: baseline;
+  margin-right: 2px;
+}
+.swatch--inner { background: #22dd77; }
+.swatch--outer { background: #ffaa22; }
+
+.adjust-readout { margin: var(--space-3) 0; }
+.adjust-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.78rem;
+  padding: 3px 0;
+}
+.adjust-row .axis-label { min-width: 2.2em; color: var(--faint); }
+.adjust-ratio { margin-left: auto; }
+.adjust-row--total { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 7px; }
+
+.adjust-actions { display: flex; gap: var(--space-2); flex-wrap: wrap; }
+.adjust-actions .primary-btn, .adjust-actions .secondary-btn { flex: 1 1 auto; }
+.adjust-error { margin-top: var(--space-3); }
+
+.manual-chip {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+/* Magnifier pinned to the line being placed. Pixelated, deliberately: this
+ * is for deciding which pixel the border ends on, and a smoothed upscale
+ * invents a gradient where the answer is. */
+.adjust-loupe {
+  position: absolute;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow-mid, 0 8px 24px rgba(0, 0, 0, 0.35));
+  background-repeat: no-repeat;
+  background-color: var(--frame-bg);
+  image-rendering: pixelated;
+  pointer-events: none;
+  z-index: 3;
+}
+.adjust-loupe-crosshair {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 1px;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+/* A left/right boundary is a vertical line; a top/bottom one is horizontal. */
+.adjust-loupe:not(.adjust-loupe--vertical) .adjust-loupe-crosshair {
+  left: 0;
+  top: 50%;
+  width: 100%;
+  height: 1px;
+}
+
+.leeway-chip {
+  font-size: 0.62rem;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: var(--accent-text);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  cursor: help;
+}
+
+.grader-compare { margin-top: var(--space-4); }
+.grader-compare > summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--accent-text);
+  padding: var(--space-2) 0;
+}
+.table-scroll { overflow-x: auto; }
+.grader-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.grader-table th, .grader-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+.grader-table thead th { color: var(--faint); font-weight: 500; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
+.grader-table tbody th { font-weight: 600; }
+.grader-source { font-size: 0.68rem; line-height: 1.4; min-width: 16ch; }
+
+/* Fullscreen boundary placement. A CSS overlay rather than the Fullscreen
+ * API: the toolbar, the live readout and Save have to come with it, and the
+ * API would put them behind the fullscreen element instead. */
+body.adjust-fullscreen-open { overflow: hidden; }
+
+.centering-adjust--fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  margin: 0;
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  background: var(--bg);
+  /* The ambient blobs sit behind the whole page; an overlay that let them
+   * through would put moving colour under a measurement surface. */
+  background-image: none;
+  overscroll-behavior: contain;
+}
+
+.centering-adjust--fullscreen .adjust-viewport {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 0;
+}
+.centering-adjust--fullscreen .adjust-readout { margin: 0; }
+.centering-adjust--fullscreen .adjust-actions { flex: 0 0 auto; }
+.centering-adjust--fullscreen .field-hint { margin: 0; }
+
+/* Wide screens: put the numbers beside the card rather than under it, so
+ * the card gets the full height it just gained. */
+@media (min-width: 900px) {
+  .centering-adjust--fullscreen {
+    display: grid;
+    grid-template-columns: 1fr minmax(260px, 320px);
+    grid-template-rows: auto 1fr;
+    align-content: start;
+  }
+  .centering-adjust--fullscreen .adjust-toolbar { grid-column: 1 / -1; }
+  .centering-adjust--fullscreen .adjust-viewport { grid-row: 2; }
+  .centering-adjust--fullscreen .adjust-side {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    overflow-y: auto;
+  }
+}
+
+/* A refused sub-grade that can say why. The marker is what tells you there
+ * is a reason to hover for; an unexplained n/a looks identical without it. */
+.subgrade-tile--explained { cursor: help; }
+.why-mark {
+  display: inline-block;
+  margin-left: 3px;
+  font-size: 0.6em;
+  vertical-align: super;
+  opacity: 0.7;
+}
+
+/* Rotation scans were attached and the solve still didn't run. Distinct from
+ * the plain single-capture chip, which means none were attached at all. */
+.method-chip--fell-back {
+  cursor: help;
+  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 35%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+
+.align-detail { margin-top: var(--space-3); width: 100%; }
+.align-detail > summary { cursor: pointer; font-size: 0.74rem; color: var(--accent-text); padding: var(--space-2) 0; }
+.align-row--refused td, .align-row--refused th { color: var(--warn); }
+
+/* ---- ding map ----
+ * The card with its located defects outlined on it. A gallery of crops says
+ * what each defect looks like and nothing about where it is; this says where. */
+.ding-map {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+}
+.ding-map-side { margin: 0; text-align: center; }
+.ding-map-frame {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-low);
+}
+.ding-map-frame img { display: block; height: 340px; width: auto; max-width: 100%; }
+
+.ding-mark {
+  position: absolute;
+  border: 2px solid var(--warn);
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+  cursor: help;
+  line-height: 1;
+}
+/* The grade sits outside the box where the box is thin — an edge strip is a
+ * few pixels wide and a label inside it would cover the thing it labels. */
+.ding-mark > b {
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 1px 4px;
+  border-radius: 999px;
+  color: var(--on-accent);
+  background: var(--warn);
+  white-space: nowrap;
+}
+.ding-map-side .viewer-side-label { display: block; margin-top: var(--space-2); }
