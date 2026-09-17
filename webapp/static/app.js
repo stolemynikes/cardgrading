@@ -1882,10 +1882,21 @@ function centeringSideHTML(label, sideData, overlayImg, knownFullArt = false) {
 
 function regionTileHTML(bareKey, prefixedKey, shortLabel, sideKey, regionData, images, isDing) {
   const img = images[`${sideKey}_${prefixedKey}`];
-  return `<div class="region-tile${isDing ? " region-tile--ding" : ""}">
+  // Two independent readings of the same corner. Whitening is blind on a
+  // neutral border — a grey or silver border is already desaturated, so its
+  // gate can never fire — and relief is blind to a stain that hasn't deformed
+  // anything. Whichever is worse decides the grade, so the tile shows the one
+  // that did, and names both on hover.
+  const wear = regionData.relief_wear_pct;
+  const hasWear = wear !== null && wear !== undefined;
+  const shown = hasWear && wear > regionData.whitening_pct ? wear : regionData.whitening_pct;
+  const title = hasWear
+    ? `whitening ${regionData.whitening_pct.toFixed(2)}% · surface relief ${wear.toFixed(2)}%`
+    : `whitening ${regionData.whitening_pct.toFixed(2)}%`;
+  return `<div class="region-tile${isDing ? " region-tile--ding" : ""}" title="${title}">
     ${img ? `<img class="region-thumb" src="${img}" alt="${shortLabel}">` : ""}
     <div class="region-label">${shortLabel}${isDing ? ` <span class="ding-marker" title="Worst region — set this side's grade">!</span>` : ""}</div>
-    <div class="mono region-pct" style="color:${gradeColor(regionData.grade)}">${regionData.whitening_pct.toFixed(2)}%</div>
+    <div class="mono region-pct" style="color:${gradeColor(regionData.grade)}">${shown.toFixed(2)}%</div>
   </div>`;
 }
 

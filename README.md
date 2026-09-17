@@ -237,6 +237,43 @@ from Stage 2's *measured* border widths (not fixed pixel sizes), so the analysis
 never accidentally crosses from the border into the inner panel — which would otherwise
 misread the normal border/panel color transition as a huge fake defect on every card.
 
+#### Corner and edge wear, read from relief as well as brightness
+
+Whitening is found as a local brightness spike against a darker border, gated on the
+pixel being markedly *less saturated* than the crop's own median — exposed cardstock is
+far less saturated than the ink over it. On a yellow Base Set border or a blue back
+that isolates a real chip exactly as intended.
+
+On a **neutral border it can never fire.** A grey or silver border is already
+desaturated, so no pixel can be less saturated than the median, and the method reports
+0.0% however badly the card is chipped. Measured on a real card whitened deliberately
+along two edges, the whitening map read **0.0% on every one of the sixteen regions, on
+both the clean and the damaged capture.**
+
+Worse, the gate protecting that measurement was being tripped by the damage. A crop
+that isn't uniform border is refused, since whitening measured off artwork isn't a
+measurement of the card — and a whitened edge is *less* uniform than a clean one. The
+deliberately whitened edge pushed its own uniformity from above the floor to 0.54 and
+was refused, so the card's worst edge reported "can't measure" rather than a bad grade.
+
+So every region gets a second reading from the photometric relief, which has the albedo
+divided out and therefore does not care what colour the border is or whether it is
+uniform. The two are taken at their worst — they fail in opposite directions, whitening
+being blind to a neutral border and relief being blind to a stain that hasn't deformed
+anything — and a crop the whitening path refuses is still graded from relief alone,
+saying so in its reason.
+
+Corners and edges get separate band tables, because the warp seam leaves false relief
+around the card's boundary and a corner crop (small, touching two seams) carries far
+more of it than a long edge crop. On the clean card, corners read up to 2.26% with
+nothing wrong with them while edges read 0.00–0.31%. One table sized for corners made
+every edge unreadable: the whitened edge measured 1.21%, which is 811× its own clean
+reading, and still sat inside a floor set at 2.5%.
+
+On the validation pair this moves corners/edges from **10/10 on both cards** to 10/10
+clean and **corners 3, edges 8** damaged — the bottom-left corner carrying the crease at
+24.2% wear against 0.00% clean.
+
 ### Stage 4 — Surface (`pipeline/surface.py`)
 Grades surface defects — scratches, dents, creases, print lines — from whichever
 signal the capture provides, deterministically and offline. Defects are found by

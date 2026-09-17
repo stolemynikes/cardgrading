@@ -648,8 +648,18 @@ def grade_card(
     front_borders = side_borders(result.front_horizontal, result.front_vertical, front_result.warped)
     back_borders = side_borders(result.back_horizontal, result.back_vertical, back_result.warped)
     stage("corners_edges")
+    # The photometric relief gives every corner and edge a second reading that
+    # does not depend on the border's colour or on it being uniform. Only
+    # passed for a side that actually solved: the single-image approximation
+    # has print leaking into it, and print at a card's edge is the border.
+    def _wear_relief(vision):
+        if vision is None or vision.method != "photometric_stereo":
+            return None
+        return vision.measurement_relief if vision.measurement_relief is not None else vision.relief
+
     ce_result, ce_overlays = corners_edges.analyze_corners_edges(
-        front_result.warped, back_result.warped, front_borders, back_borders, thresholds
+        front_result.warped, back_result.warped, front_borders, back_borders, thresholds,
+        front_relief=_wear_relief(front_vision), back_relief=_wear_relief(back_vision),
     )
     report["corners_edges"] = ce_result.to_dict()
 

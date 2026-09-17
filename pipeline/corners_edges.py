@@ -37,10 +37,15 @@ class RegionResult:
     # canonical warp — so the report can draw it back onto the card rather
     # than only showing a crop with no sense of place.
     box: list[float] | None = None
+    # How much of this region is physically deformed, read from the
+    # photometric relief. None when there was no relief to read — a
+    # single-image capture, or a side with no rotation scans.
+    relief_wear_pct: float | None = None
 
     def to_dict(self) -> dict:
         return {
             "whitening_pct": round(self.whitening_pct, 3),
+            "relief_wear_pct": None if self.relief_wear_pct is None else round(self.relief_wear_pct, 3),
             "blob_count": self.blob_count,
             # A refused region has no grade. It used to serialize the grade it
             # would have had, gated only by `measurable` — which reads as a
@@ -277,11 +282,19 @@ def _whitening_mask(visibility_map: np.ndarray, crop_bgr: np.ndarray, cfg: dict)
     return cv2.bitwise_and(local, _absolute_whitening_gate(crop_bgr, cfg))
 
 
-def _grade_from_whitening(pct: float, grade_bands: list[dict]) -> int:
+def _grade_from_pct(pct: float, grade_bands: list[dict]) -> int:
+    """Walk a band table. Two tables use this — whitening and relief wear —
+    so the ceiling key is read under either name rather than the tables being
+    forced to share one that is wrong for one of them."""
     for tier in grade_bands:
-        if pct <= tier["max_whitening_pct"]:
+        ceiling = tier.get("max_whitening_pct", tier.get("max_pct"))
+        if ceiling is not None and pct <= ceiling:
             return tier["grade"]
     return max(1, grade_bands[-1]["grade"] - 2)
+
+
+# Kept under the old name: it is referenced from calibration scripts.
+_grade_from_whitening = _grade_from_pct
 
 
 def _border_uniformity(crop_bgr: np.ndarray) -> float:
@@ -345,14 +358,76 @@ def _square_tiles(crop_bgr: np.ndarray) -> list[np.ndarray]:
     return [t for t in tiles if t.size]
 
 
-def analyze_region(name: str, crop_bgr: np.ndarray, cfg: dict) -> tuple[RegionResult, np.ndarray]:
+def relief_wear_pct(relief_crop: np.ndarray | None, cfg: dict) -> float | None:
+    """How much of this corner or edge is physically deformed.
+
+    Read from the photometric relief, which is shape with the albedo already
+    divided out — so unlike the whitening map it does not care what colour the
+    border is, and does not need the border to be uniform.
+
+    Both of those matter. Whitening is found as a local brightness spike
+    against a darker border, which works on a classic dark-bordered card and
+    finds nothing at all on a silver-bordered modern one: measured on a card
+    whitened deliberately along two edges, the whitening map read 0.0% on
+    every region of both the clean and the damaged capture. The same regions
+    read 0.001% clean against 1.209% damaged in relief.
+    """
+    if relief_crop is None or relief_crop.size == 0:
+        return None
+    deviation = np.abs(relief_crop.astype(np.int16) - 128)
+    threshold = cfg.get("relief_wear_threshold", 26)
+    return float(100.0 * (deviation > threshold).mean())
+
+
+def _relief_wear_bands(cfg: dict, is_corner: bool) -> list | None:
+    """The band table for this kind of region.
+
+    Corners and edges get their own, because the perspective-warp seam leaves
+    false relief around the card's boundary and a corner crop — small, and
+    touching two seams — carries far more of it than a long edge crop does.
+    """
+    bands = cfg.get("relief_wear_bands")
+    if isinstance(bands, dict):
+        return bands.get("corners" if is_corner else "edges")
+    return bands
+
+
+def analyze_region(
+    name: str,
+    crop_bgr: np.ndarray,
+    cfg: dict,
+    relief_crop: np.ndarray | None = None,
+    is_corner: bool = True,
+) -> tuple[RegionResult, np.ndarray]:
     """Score one corner/edge crop. Returns the metric plus the kept blob mask for debug overlay."""
     uniformity = _border_uniformity(crop_bgr)
+    wear_pct = relief_wear_pct(relief_crop, cfg)
+    bands = _relief_wear_bands(cfg, is_corner)
+    wear_grade = _grade_from_pct(wear_pct, bands) if wear_pct is not None and bands else None
+
     if uniformity < cfg.get("min_border_uniformity", 0.55):
+        floor = cfg.get("min_border_uniformity", 0.55)
+        if wear_grade is not None:
+            # Relief needs no border at all, so a crop the whitening map can't
+            # read is still measurable here. This is not a nicety: the gate
+            # was being tripped *by the damage* — a deliberately whitened edge
+            # pushed its own uniformity from above the floor to 0.54 and was
+            # refused, so the card's worst edge reported "can't measure"
+            # instead of a bad grade.
+            return (
+                RegionResult(
+                    name, 0.0, 0, wear_grade, uniformity=uniformity, relief_wear_pct=wear_pct,
+                    reason=(
+                        f"graded from surface relief only — this crop isn't uniform border "
+                        f"({uniformity:.2f} against a {floor:.2f} floor), so whitening measured "
+                        "off it would be measured off artwork"
+                    ),
+                ),
+                np.zeros(crop_bgr.shape[:2], np.uint8),
+            )
         # Refused rather than graded: reporting a number measured off artwork
         # is worse than reporting that this region can't be measured from
         # this capture.
-        floor = cfg.get("min_border_uniformity", 0.55)
         return (
             RegionResult(
                 name,
@@ -388,7 +463,15 @@ def analyze_region(name: str, crop_bgr: np.ndarray, cfg: dict) -> tuple[RegionRe
     total_area = mask.shape[0] * mask.shape[1]
     whitening_pct = 100.0 * whitening_area / total_area if total_area else 0.0
     grade = _grade_from_whitening(whitening_pct, cfg["grade_bands"])
-    return RegionResult(name, whitening_pct, blob_count, grade, uniformity=uniformity), kept_mask
+    # Two independent readings of the same corner, and the worse one wins.
+    # They fail in opposite directions: whitening is blind to a light border,
+    # relief is blind to a stain that hasn't deformed anything.
+    if wear_grade is not None:
+        grade = min(grade, wear_grade)
+    return (
+        RegionResult(name, whitening_pct, blob_count, grade, uniformity=uniformity, relief_wear_pct=wear_pct),
+        kept_mask,
+    )
 
 
 def draw_region_overlay(crop_bgr: np.ndarray, mask: np.ndarray, region: RegionResult) -> np.ndarray:
@@ -407,23 +490,35 @@ def draw_region_overlay(crop_bgr: np.ndarray, mask: np.ndarray, region: RegionRe
     return overlay
 
 
-def analyze_side(image: np.ndarray, borders: BorderWidths, cfg: dict) -> tuple[SideResult, dict[str, np.ndarray]]:
-    """Analyze all 4 corners + 4 edges of one side. Returns the result plus debug overlay crops."""
+def analyze_side(
+    image: np.ndarray, borders: BorderWidths, cfg: dict, relief: np.ndarray | None = None
+) -> tuple[SideResult, dict[str, np.ndarray]]:
+    """Analyze all 4 corners + 4 edges of one side. Returns the result plus debug overlay crops.
+
+    `relief` is the measured Card Vision render for this side, when there is
+    one. Cropped identically to the image, it gives every region a second,
+    colour-blind reading — see `relief_wear_pct`.
+    """
     sizes = _region_sizes(borders, cfg)
     corner_crops, edge_crops = _crop_regions(image, sizes, cfg["physical_edge_margin_px"])
+    relief_corners, relief_edges = (
+        _crop_regions(relief, sizes, cfg["physical_edge_margin_px"])
+        if relief is not None and relief.shape[:2] == image.shape[:2]
+        else ({}, {})
+    )
     boxes = region_boxes(sizes, image.shape, cfg["physical_edge_margin_px"])
     overlays: dict[str, np.ndarray] = {}
 
     corner_results: dict[str, RegionResult] = {}
     for name, crop in corner_crops.items():
-        result, mask = analyze_region(name, crop, cfg)
+        result, mask = analyze_region(name, crop, cfg, relief_corners.get(name), is_corner=True)
         result.box = boxes.get(f"corner_{name}")
         corner_results[name] = result
         overlays[f"corner_{name}"] = draw_region_overlay(crop, mask, result)
 
     edge_results: dict[str, RegionResult] = {}
     for name, crop in edge_crops.items():
-        result, mask = analyze_region(name, crop, cfg)
+        result, mask = analyze_region(name, crop, cfg, relief_edges.get(name), is_corner=False)
         result.box = boxes.get(f"edge_{name}")
         edge_results[name] = result
         overlays[f"edge_{name}"] = draw_region_overlay(crop, mask, result)
@@ -442,10 +537,12 @@ def analyze_corners_edges(
     front_borders: BorderWidths,
     back_borders: BorderWidths,
     thresholds: dict,
+    front_relief: np.ndarray | None = None,
+    back_relief: np.ndarray | None = None,
 ) -> tuple[CornersEdgesResult, dict[str, dict[str, np.ndarray]]]:
     cfg = thresholds["corners_edges"]
-    front_result, front_overlays = analyze_side(front, front_borders, cfg)
-    back_result, back_overlays = analyze_side(back, back_borders, cfg)
+    front_result, front_overlays = analyze_side(front, front_borders, cfg, front_relief)
+    back_result, back_overlays = analyze_side(back, back_borders, cfg, back_relief)
     # None means "refused", not "perfect" — a side with nothing measurable
     # must drop out of the combination rather than pull it toward 10.
     sides = [g for g in (front_result.grade, back_result.grade) if g is not None]

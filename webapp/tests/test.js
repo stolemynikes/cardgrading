@@ -148,6 +148,33 @@ function assert(cond, message) {
   assert(content.includes("caps at 4"), "and the ceiling that defect carries");
 }
 
+// --- Test 1d2: a corner tile shows whichever of the two readings actually
+// set its grade, and names both. Whitening is blind on a neutral border and
+// relief is blind to a stain that hasn't deformed anything.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  const region = (whitening, wear, grade) => ({
+    whitening_pct: whitening, relief_wear_pct: wear, blob_count: 1, grade,
+    measurable: true, uniformity: 0.9, reason: null, box: [0.01, 0.01, 0.03, 0.02],
+  });
+  report.corners_edges.front.corners.top_left = region(0.0, 24.2, 4);
+  report.corners_edges.front.corners.top_right = region(3.1, 0.0, 8);
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("24.20%"), "the relief reading is shown when it is the worse one");
+  assert(content.includes("3.10%"), "and the whitening reading when that one is");
+  assert(content.includes("surface relief"), "both readings are named on the tile");
+
+  // Reports saved before relief-based wear existed carry no relief_wear_pct.
+  const older = JSON.parse(JSON.stringify(data.report));
+  dom.window.handleReport(older, data.images);
+  const olderContent = dom.window.document.getElementById("report-content").innerHTML;
+  assert(olderContent.includes("region-pct"), "an older corners/edges report still renders");
+  assert(!olderContent.includes("surface relief"), "and claims no reading it never had");
+}
+
 // --- Test 1e2: a report saved before defect classification existed has no
 // defects, no kinds and no limited_by, and must still render.
 {
