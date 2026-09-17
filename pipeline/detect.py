@@ -81,8 +81,20 @@ def order_points(pts: np.ndarray) -> np.ndarray:
     return rect
 
 
-def _estimate_background_color(image: np.ndarray, patch: int = 40) -> np.ndarray:
-    """Sample the four image corners, which are assumed to be background (matte, not card)."""
+# How far two corner samples can differ and still count as the same
+# background. A CIS scanner's lighting falls off across the bed, so one sheet
+# of black card can read tens of levels apart corner to corner; black stock
+# against a bare white lid is nearer 400 apart.
+BACKGROUND_COLOR_TOLERANCE = 60.0
+
+
+def _corner_samples(image: np.ndarray, patch: int = 40) -> list[np.ndarray]:
+    """One colour per image corner, each the median of a small patch.
+
+    Median rather than mean within the patch, so a speck of dust or a corner
+    just clipping the card's edge doesn't drag that corner's colour off the
+    background.
+    """
     h, w = image.shape[:2]
     patch = min(patch, h // 4, w // 4)
     corners = [
@@ -91,8 +103,56 @@ def _estimate_background_color(image: np.ndarray, patch: int = 40) -> np.ndarray
         image[h - patch:h, 0:patch],
         image[h - patch:h, w - patch:w],
     ]
-    samples = np.concatenate([c.reshape(-1, 3) for c in corners], axis=0)
-    return samples.mean(axis=0)
+    return [np.median(c.reshape(-1, 3), axis=0) for c in corners]
+
+
+def _estimate_background_colors(image: np.ndarray, patch: int = 40) -> np.ndarray:
+    """Background colours sampled from the four image corners, one per corner.
+
+    Four colours rather than their average, because the background is not
+    always one colour. A backing sheet smaller than the scanner bed leaves
+    bare white lid showing along an edge, so some corners sit on the sheet
+    and some on the lid — and the mean of black stock and a white lid is a
+    mid-grey that matches neither. Every pixel then measured as far from
+    "background", the whole frame came out as one blob, and the scan was
+    reported as having no card in it at all.
+
+    Returns an (n, 3) array of BGR colours. Callers measure distance to the
+    nearest of them, so a pixel matching any corner counts as background.
+    With a uniform background all four agree and this is what taking their
+    mean always did.
+
+    Not safe on its own: a card pushed right into a corner puts the card's
+    own colour into this list, and the card then reads as background. So the
+    caller searches under this model *and* under the plain mean, and lets the
+    card-likeness scoring pick between them — see `find_card_contour`.
+    """
+    sampled = _corner_samples(image, patch)
+
+    # Corners of the same background are merged, so an evenly-backed scan
+    # comes back with one colour and the caller can skip the second search
+    # entirely. The tolerance is loose because it has to survive a scanner's
+    # lighting falloff across the bed — corners of one black sheet can read
+    # tens of levels apart — while still separating black stock from a bare
+    # white lid, which are several hundred apart.
+    groups: list[list[np.ndarray]] = []
+    for color in sampled:
+        for group in groups:
+            if np.linalg.norm(color - group[0]) <= BACKGROUND_COLOR_TOLERANCE:
+                group.append(color)
+                break
+        else:
+            groups.append([color])
+    return np.stack([np.mean(group, axis=0) for group in groups])
+
+
+def _nearest_color_distance(pixels: np.ndarray, colors: np.ndarray) -> np.ndarray:
+    """Per-pixel distance to the closest of `colors`, in BGR space."""
+    dist = np.full(pixels.shape[:2], np.inf, np.float32)
+    for color in colors:
+        diff = pixels - color
+        np.minimum(dist, np.sqrt((diff ** 2).sum(axis=2)), out=dist)
+    return dist
 
 
 # Candidate-quad generation and scoring, tuned against real misdetections:
@@ -141,7 +201,7 @@ def _card_likeness_penalty(quad: np.ndarray, contour: np.ndarray, area_frac: flo
 def find_card_contour(image: np.ndarray) -> np.ndarray | None:
     """Find the card's corner quad against a matte background.
 
-    Thresholds on per-pixel color distance from the background sample rather
+    Thresholds on per-pixel color distance from the background samples rather
     than absolute brightness — a plain brightness split assumes the card is
     brighter than the background, which is false for dark Pokemon card backs
     and would instead pick out just the bright inner text/art panel.
@@ -151,33 +211,58 @@ def find_card_contour(image: np.ndarray) -> np.ndarray | None:
     returns the most card-like candidate rather than blindly trusting the
     largest contour at the Otsu split.
     """
-    bg_color = _estimate_background_color(image)
-    diff = image.astype(np.float32) - bg_color
-    dist = np.sqrt((diff ** 2).sum(axis=2))
-    dist_u8 = np.clip(dist, 0, 255).astype(np.uint8)
-    blurred = cv2.GaussianBlur(dist_u8, (5, 5), 0)
+    bg_colors = _estimate_background_colors(image)
+    pixels = image.astype(np.float32)
     image_area = image.shape[0] * image.shape[1]
 
-    otsu_val, _ = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Two background models, because each one fails where the other works.
+    #
+    #   nearest-of-four   handles a background that isn't one colour — a
+    #                     backing sheet smaller than the bed, leaving bare
+    #                     white lid along an edge. Their mean is a mid-grey
+    #                     matching neither, so every pixel reads as far from
+    #                     background and the whole frame comes out as one
+    #                     blob: "no card contour found" on a scan with a
+    #                     perfectly good card in it.
+    #
+    #   mean-of-four      handles a card pushed into a corner, where the
+    #                     nearest-of-four model samples the card itself and
+    #                     then treats it as background.
+    #
+    # Rather than guess which corner is really background, both models are
+    # searched and every candidate scored on the same card-likeness penalty.
+    # The scoring already exists to tell a card from a not-card, and it is a
+    # better judge of that than a rule about corners would be.
+    distance_maps = [_nearest_color_distance(pixels, bg_colors)]
+    if len(bg_colors) > 1:
+        # The mean of the four raw corner samples, not of the groups. With
+        # three corners on the background and one on the card, the raw mean
+        # still sits close to the background and isolates the card; the mean
+        # of the two *groups* sits halfway between them and isolates nothing.
+        mean_color = np.mean(_corner_samples(image), axis=0)
+        distance_maps.append(_nearest_color_distance(pixels, mean_color[None, :]))
 
     best_quad = None
     best_penalty = np.inf
-    for mult in THRESHOLD_MULTIPLIERS:
-        tval = otsu_val * mult
-        if tval > 250:
-            continue
-        _, thresh = cv2.threshold(blurred, tval, 255, cv2.THRESH_BINARY)
-        thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for contour in contours:
-            area_frac = cv2.contourArea(contour) / image_area
-            if area_frac < MIN_CANDIDATE_AREA_FRAC:
+    for dist in distance_maps:
+        blurred = cv2.GaussianBlur(np.clip(dist, 0, 255).astype(np.uint8), (5, 5), 0)
+        otsu_val, _ = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        for mult in THRESHOLD_MULTIPLIERS:
+            tval = otsu_val * mult
+            if tval > 250:
                 continue
-            for quad in _quads_from_contour(contour):
-                penalty = _card_likeness_penalty(quad, contour, area_frac)
-                if penalty < best_penalty:
-                    best_penalty = penalty
-                    best_quad = quad
+            _, thresh = cv2.threshold(blurred, tval, 255, cv2.THRESH_BINARY)
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for contour in contours:
+                area_frac = cv2.contourArea(contour) / image_area
+                if area_frac < MIN_CANDIDATE_AREA_FRAC:
+                    continue
+                for quad in _quads_from_contour(contour):
+                    penalty = _card_likeness_penalty(quad, contour, area_frac)
+                    if penalty < best_penalty:
+                        best_penalty = penalty
+                        best_quad = quad
 
     return best_quad
 
