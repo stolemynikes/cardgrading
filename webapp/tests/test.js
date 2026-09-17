@@ -122,16 +122,16 @@ function assert(cond, message) {
   const report = JSON.parse(JSON.stringify(data.report));
   report.surface = {
     front: { grade: 7, defect_area_pct: 0.799, defect_count: 63, longest_defect_px: 957,
-             source: "photometric_relief", upper_bound: false, note: "measured from solved surface normals", raking: null },
+             source: "photometric_relief", note: "measured from solved surface normals" },
     back: { grade: 6, defect_area_pct: 1.4, defect_count: 5, longest_defect_px: 300,
-            source: "raking_defect_map", upper_bound: true, note: "upper bound", raking: null },
+            source: "photometric_relief", note: "measured from solved surface normals" },
   };
   dom.window.handleReport(report, data.images);
   const content = dom.window.document.getElementById("report-content").innerHTML;
   assert(content.includes("grade 7"), "measured surface grade rendered");
   assert(content.includes("0.799%"), "defect area shown to the measured precision");
   assert(content.includes("957px"), "longest defect shown");
-  assert(content.includes("grade 6 (max)"), "an upper-bound side is marked as a ceiling, not a value");
+  assert(content.includes("grade 6"), "the weaker side is rendered too");
   assert(content.includes("measured from solved surface normals"), "the signal's provenance is stated");
 }
 
@@ -143,13 +143,49 @@ function assert(cond, message) {
   const report = JSON.parse(JSON.stringify(data.report));
   report.surface = {
     front: { grade: null, defect_area_pct: 9.1, defect_count: 240, longest_defect_px: 1400,
-             source: "single_image_relief", upper_bound: false, note: "print leaks into this signal", raking: null },
+             source: "single_image_relief", note: "print leaks into this signal" },
     back: null,
   };
   dom.window.handleReport(report, data.images);
   const content = dom.window.document.getElementById("report-content").innerHTML;
   assert(content.includes("not graded"), "an ungraded surface says so rather than showing a number");
   assert(content.includes("print leaks into this signal"), "the reason it isn't graded is given");
+}
+
+// --- Test 1f2: the offline same-side warning. Distinct from the identity
+// warning in 1g, which says a similar thing from the vision stage — that one
+// needs an API key and is usually skipped, this one always runs.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+
+  const clean = JSON.parse(JSON.stringify(data.report));
+  clean.capture_pair = { identical_files: false, similarity: 0.07, same_side_suspected: false, note: null };
+  dom.window.handleReport(clean, data.images);
+  assert(
+    !dom.window.document.getElementById("report-content").innerHTML.includes("same side"),
+    "a genuine front/back pair gets no warning"
+  );
+
+  const duplicated = JSON.parse(JSON.stringify(data.report));
+  duplicated.capture_pair = {
+    identical_files: true, similarity: 1.0, same_side_suspected: true,
+    note: "The front and back uploads are the same file, so the back was graded on the front.",
+  };
+  dom.window.handleReport(duplicated, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("the same file"), "the duplicate upload is called out in the report's own words");
+  assert(content.includes("banner-warn"), "it warns rather than reading as an error");
+  assert(content.includes("grade-header"), "and the report still renders — this never blocks a grade");
+
+  // Reports saved before this check existed have no capture_pair at all.
+  const old = JSON.parse(JSON.stringify(data.report));
+  delete old.capture_pair;
+  dom.window.handleReport(old, data.images);
+  assert(
+    dom.window.document.getElementById("report-content").innerHTML.includes("grade-header"),
+    "an older report with no capture_pair still renders"
+  );
 }
 
 // --- Test 1g: card identification header, pair warnings, market value, DINGS, disagreement, lightbox ---
@@ -611,11 +647,10 @@ async function runTest2b() {
   assert(submitBtn.disabled === false, "submit stays enabled with only front and back");
 
   dom.window.eval(`
-    state.files.front_angled = new File(["x"], "fa.jpg", { type: "image/jpeg" });
-    state.files.back_angled = new File(["x"], "ba.jpg", { type: "image/jpeg" });
+    state.files.photometric_front = [new File(["x"], "r0.tif", { type: "image/tiff" })];
     updateSubmitEnabled();
   `);
-  assert(submitBtn.disabled === false, "submit enabled again once all 4 files are set");
+  assert(submitBtn.disabled === false, "submit stays enabled with rotation scans attached too");
 }
 
 // --- Test 6: the app opens in upload mode (the scanner flow), and only
@@ -653,9 +688,9 @@ async function runTest2b() {
   );
 }
 
-// --- Test 7: the guided capture is two steps. Raking-light shots were
-// removed from the flow — surface relief now comes from rotating the card
-// under a fixed camera, which is a picker upload, not a capture step.
+// --- Test 7: the guided capture is two steps. Raking-light shots are gone
+// from the flow entirely — surface relief comes from rotating the card under
+// a fixed light, which is a picker upload, not a capture step.
 {
   const dom = makeDom();
   const w = dom.window;
@@ -785,14 +820,14 @@ async function runTest2b() {
   // regression case: no card present, but not dark enough to already be
   // caught by the darkness check.
   assert(
-    compute(flatPixels(130, N), false, GOOD_HEIGHT) === "No card detected — center it in the frame",
+    compute(flatPixels(130, N), GOOD_HEIGHT) === "No card detected — center it in the frame",
     "flat/uniform region with no card-like detail triggers the new warning"
   );
 
   // Darkness must still win over "no card" when a flat region is ALSO dark
   // — can't tell if a card's there or not if you can't see anything.
   assert(
-    compute(flatPixels(20, N), false, GOOD_HEIGHT) === "Too dark — add more light",
+    compute(flatPixels(20, N), GOOD_HEIGHT) === "Too dark — add more light",
     "darkness check takes priority over the no-card check on a dark+flat region"
   );
 
@@ -800,37 +835,22 @@ async function runTest2b() {
   // kind of local contrast) at a normal brightness with no glare must not
   // false-positive on any check.
   assert(
-    compute(texturedPixels(N, 80, 180), false, GOOD_HEIGHT) === null,
+    compute(texturedPixels(N, 80, 180), GOOD_HEIGHT) === null,
     "a textured region with a card-like level of contrast produces no warning"
   );
 
   // High contrast + a genuine glare cluster should still report glare, not
   // get preempted by the (satisfied) no-card check.
   assert(
-    compute(glarePixels(N, 150, 0.15), false, GOOD_HEIGHT) === "Glare detected — adjust the light angle",
+    compute(glarePixels(N, 150, 0.15), GOOD_HEIGHT) === "Glare detected — adjust the light angle",
     "glare is still reported on a textured (card-like) region that also has a bright cluster"
   );
 
   // Textured, well-lit, but the guide maps to a small native region — move
   // closer should be the only thing left to say.
   assert(
-    compute(texturedPixels(N, 80, 180), false, 400) === "Move closer to the card",
+    compute(texturedPixels(N, 80, 180), 400) === "Move closer to the card",
     "distance check still fires when nothing else is wrong but the guide region is small"
-  );
-
-  // Angled steps skip darkness/glare (raking light triggers them by
-  // design) but the no-card check isn't lighting-technique-specific, so it
-  // must still fire on a flat/empty region even when isAngled is true.
-  assert(
-    compute(flatPixels(20, N), true, GOOD_HEIGHT) === "No card detected — center it in the frame",
-    "no-card check still applies on angled steps even though darkness/glare don't"
-  );
-
-  // And confirm glare truly is suppressed on angled steps (existing
-  // behavior, now routed through the refactored pure function).
-  assert(
-    compute(glarePixels(N, 150, 0.15), true, GOOD_HEIGHT) === null,
-    "glare check is suppressed on angled steps, same as before the refactor"
   );
 
   // Regression: a real mis-shot the user actually hit — pointing the camera
@@ -852,7 +872,7 @@ async function runTest2b() {
     return arr;
   }
   assert(
-    compute(grayscaleTexturedPixels(N, 170, 250), false, GOOD_HEIGHT) === "Doesn't look like a card — too little color",
+    compute(grayscaleTexturedPixels(N, 170, 250), GOOD_HEIGHT) === "Doesn't look like a card — too little color",
     "a high-contrast but colorless region (printed document, the user's actual test case) is now caught"
   );
 
@@ -893,7 +913,7 @@ async function runTest2b() {
     return arr;
   }
   assert(
-    compute(flatSaturationPixels(N, 0.1244), false, GOOD_HEIGHT) !== "Doesn't look like a card — too little color",
+    compute(flatSaturationPixels(N, 0.1244), GOOD_HEIGHT) !== "Doesn't look like a card — too little color",
     "a real card's measured saturation (~0.1244, the submitted Pangoro card photo) does not false-trigger"
   );
 }
@@ -1146,11 +1166,11 @@ async function runTest10b() {
       cardPx[i + 3] = 255;
     }
     assert(
-      w.computePrecheckMessage(cardPx, false, 500, true) === "Card too small in frame — zoom in",
+      w.computePrecheckMessage(cardPx, 500, true) === "Card too small in frame — zoom in",
       "with zoom available, the distance hint says zoom in"
     );
     assert(
-      w.computePrecheckMessage(cardPx, false, 500, false) === "Move closer to the card",
+      w.computePrecheckMessage(cardPx, 500, false) === "Move closer to the card",
       "without zoom, the distance hint still says move closer"
     );
 

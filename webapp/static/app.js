@@ -283,11 +283,10 @@ function setSlotError(slotName, message) {
 }
 
 // ---- guided camera capture (primary mode) ----
-// Raking-light capture is no longer part of the flow. Rotating the card
-// under a fixed camera and a fixed light gives a solved surface-normal map,
-// which separates a scratch from printed linework outright — a single angled
-// photo can only ever suggest the difference. The CLI keeps --surface for
-// captures that already exist.
+// Raking-light capture is no longer part of the flow anywhere. Rotating the
+// card under a fixed light gives a solved surface-normal map, which
+// separates a scratch from printed linework outright — a single angled photo
+// could only ever suggest the difference.
 const STEP_ORDER = ["front", "back"];
 const STEP_LABELS = { front: "Front", back: "Back" };
 const STEP_THUMB_LABELS = { front: "Front", back: "Back" };
@@ -295,8 +294,7 @@ const STEP_THUMB_LABELS = { front: "Front", back: "Back" };
 // Which capture mode the app opens in. Upload is the default: the flatbed
 // flow produces files on disk, and a scanner beats a phone at every stage
 // except surface, so starting in a viewfinder is wrong for the common case.
-// The choice is remembered, because someone who shoots raking-light photos
-// on a phone shouldn't have to flip the switch every visit.
+// The choice is remembered, so it doesn't have to be flipped every visit.
 const CAPTURE_MODE_KEY = "cardgrading.captureMode";
 
 function storedCaptureMode() {
@@ -529,7 +527,7 @@ const NO_COLOR_MESSAGE = "Doesn't look like a card — too little color";
 // data alone, so it can run in an offscreen sample canvas and be unit tested
 // without a real <video>/getUserMedia. Never returns anything that should
 // block the shutter — only ever informs the banner text.
-function computePrecheckMessage(px, isAngled, nativeGuideHeight, canZoom = false) {
+function computePrecheckMessage(px, nativeGuideHeight, canZoom = false) {
   let sum = 0;
   let sumSq = 0;
   let bright = 0;
@@ -553,7 +551,7 @@ function computePrecheckMessage(px, isAngled, nativeGuideHeight, canZoom = false
   const brightFrac = count ? bright / count : 0;
   const meanSaturation = count ? satSum / count : 0;
 
-  if (!isAngled && meanLum < 40) {
+  if (meanLum < 40) {
     return "Too dark — add more light";
   }
   // Checked before glare/distance: if there's no card-like detail in the
@@ -563,12 +561,11 @@ function computePrecheckMessage(px, isAngled, nativeGuideHeight, canZoom = false
     return NO_CARD_MESSAGE;
   }
   // Same reasoning, different failure mode: plenty of contrast, but no
-  // color — not lighting-technique-specific, so (like the check above) this
-  // applies on angled steps too, unlike glare/darkness.
+  // color.
   if (meanSaturation < LOW_SATURATION_THRESHOLD) {
     return NO_COLOR_MESSAGE;
   }
-  if (!isAngled && brightFrac > 0.08) {
+  if (brightFrac > 0.08) {
     return "Glare detected — adjust the light angle";
   }
   if (nativeGuideHeight < 700) {
@@ -605,7 +602,6 @@ function runPrecheck() {
   const steps = activeSteps();
   const stepName = steps[currentStepIndex];
   if (!stepName) return;
-  const isAngled = stepName.endsWith("_angled");
 
   const canvas = document.getElementById("precheck-canvas");
   const sw = 240;
@@ -619,7 +615,7 @@ function runPrecheck() {
   const imgData = ctx.getImageData(rect.x, rect.y, rect.w, rect.h);
   const nativeGuideHeight = rect.h * (video.videoHeight / sh);
 
-  const message = computePrecheckMessage(imgData.data, isAngled, nativeGuideHeight, zoomAvailable());
+  const message = computePrecheckMessage(imgData.data, nativeGuideHeight, zoomAvailable());
 
   if (message === precheckPendingMessage) {
     precheckPendingCount++;
@@ -1927,41 +1923,16 @@ function cornersEdgesSideHTML(label, sideKey, sideData, images) {
   </div>`;
 }
 
-function surfaceSideHTML(sideKey, label, sideData, images) {
+function surfaceSideHTML(sideKey, label, sideData) {
   if (!sideData) return "";
 
   const graded = sideData.grade !== null && sideData.grade !== undefined;
   const gradePill = graded
-    ? `<span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}${sideData.upper_bound ? " (max)" : ""}</span>`
+    ? `<span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}</span>`
     : `<span class="method-chip">not graded</span>`;
-
-  // The raking-light defect map, when there is one, is still worth showing:
-  // it is a different view of the same surface and makes the measured
-  // numbers checkable by eye.
-  const raking = sideData.raking;
-  const alignedImg = images[`${sideKey}_surface_aligned`];
-  const defectMapImg = images[`${sideKey}_surface_defect_map`];
-  const sliderId = `surface-slider-${sideKey}`;
-  let mapHtml = "";
-  if (raking && raking.aligned && alignedImg && defectMapImg) {
-    mapHtml = `<div class="defect-slider-container">
-        <img class="defect-base" src="${alignedImg}" alt="${label} under raking light">
-        <img class="defect-overlay" id="${sliderId}-img" src="${defectMapImg}" alt="${label} defect map">
-      </div>
-      <div class="slider-row">
-        <span class="slider-end">Photo</span>
-        <input type="range" min="0" max="100" value="50" class="overlay-slider" id="${sliderId}"
-          data-target="${sliderId}-img" aria-label="${label} defect map opacity">
-        <span class="slider-end">Defects</span>
-      </div>`;
-  } else if (raking && raking.aligned === false) {
-    const reasons = (raking.gates || []).filter((g) => !g.passed).map((g) => `${gateLabel(g.name)} — ${g.detail}`).join("; ");
-    mapHtml = `<div class="banner banner-warn">Couldn't align this angled shot${reasons ? ": " + escapeHtml(reasons) : ""}.</div>`;
-  }
 
   return `<div class="surface-card">
     <div class="centering-card-header">${label} ${gradePill}</div>
-    ${mapHtml}
     <div class="axis-row">
       <span class="axis-label">defect area</span><span class="mono">${sideData.defect_area_pct.toFixed(3)}%</span>
     </div>
@@ -1995,6 +1966,17 @@ function captureWarningHTML(report) {
   return `<div class="banner banner-error">The grading might be worse because of:<br>${parts
     .map(escapeHtml)
     .join("<br>")}</div>`;
+}
+
+// The offline capture-pair check: did the same side get uploaded twice?
+// Distinct from the identity warning below, which says the same thing from
+// the vision stage — that one needs an API key and is usually skipped, this
+// one always runs. A warning, not a block: grading one side against both
+// tolerance tables is a legitimate thing to do on purpose.
+function capturePairWarningHTML(report) {
+  const pair = report.capture_pair;
+  if (!pair || !pair.same_side_suspected) return "";
+  return `<div class="banner banner-warn">${escapeHtml(pair.note || "The front and back uploads look like the same side.")}</div>`;
 }
 
 // Card identity header + capture-pair sanity warnings, from the vision
@@ -2346,6 +2328,7 @@ function buildReportHTML(report, images) {
   const surface = report.surface;
 
   let html = captureWarningHTML(report);
+  html += capturePairWarningHTML(report);
   html += cardIdHTML(report);
 
   html += scoreHeaderHTML(ge);
@@ -2381,8 +2364,8 @@ function buildReportHTML(report, images) {
   if (surface) {
     html += `<section class="report-section">
       <h2>Surface <span class="method-chip method-chip--strong">measured</span></h2>
-      ${surfaceSideHTML("front", "Front", surface.front, images)}
-      ${surfaceSideHTML("back", "Back", surface.back, images)}
+      ${surfaceSideHTML("front", "Front", surface.front)}
+      ${surfaceSideHTML("back", "Back", surface.back)}
     </section>`;
   }
 

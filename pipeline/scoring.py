@@ -85,7 +85,6 @@ def assemble_grade(
     corners_edges_grade: int | None,
     surface_grade: int | None,
     thresholds: dict,
-    surface_from_flat: bool = False,
     dimensions_within_tolerance: bool | None = None,
 ) -> GradeEstimate:
     fitted = thresholds.get("scoring", {}).get("fitted_weights")
@@ -123,9 +122,6 @@ def assemble_grade(
             return GradeEstimate(centering_grade, corners_edges_grade, surface_grade, 0.0, 0, MIN_SCORE,
                                  "nothing measurable in this capture — no grade can be estimated")
         overall = _heuristic_overall(sub_grades)
-
-    if surface_from_flat and surface_grade is not None:
-        note += " · surface judged from the flat shots only — flat lighting hides shallow scratches, treat it as an upper bound"
 
     # A measurably miscut or trimmed card caps out regardless of how clean
     # its surface and corners are — graders treat wrong dimensions as a

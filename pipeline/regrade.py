@@ -18,19 +18,13 @@ from pipeline import centering as centering_stage
 from pipeline import corners_edges, dings, scoring
 
 
-def _surface_inputs(report: dict) -> tuple[int | None, bool]:
-    """Weakest graded side, and whether every graded side was an upper bound.
-
-    Mirrors grade.py: a side with no grade doesn't vote, and the result is
-    only an upper bound if nothing that contributed was a real measurement.
-    """
+def _surface_grade(report: dict) -> int | None:
+    """Weakest graded side. Mirrors grade.py: a side with no grade doesn't vote."""
     surface = report.get("surface") or {}
     graded = [
         side for side in surface.values() if isinstance(side, dict) and side.get("grade") is not None
     ]
-    grade = min((side["grade"] for side in graded), default=None)
-    upper_bound = bool(graded) and all(bool(side.get("upper_bound")) for side in graded)
-    return grade, upper_bound
+    return min((side["grade"] for side in graded), default=None)
 
 
 DEFAULT_BORDER_FRACTION = 0.04
@@ -120,14 +114,11 @@ def rescore(report: dict, thresholds: dict) -> dict:
         # just PSA's.
         centering["by_grader"] = centering_stage.compare_graders(centering, thresholds)
     corners_edges = report.get("corners_edges") or {}
-    surface_grade, surface_from_flat = _surface_inputs(report)
-
     estimate = scoring.assemble_grade(
         centering.get("overall_grade"),
         corners_edges.get("overall_grade"),
-        surface_grade,
+        _surface_grade(report),
         thresholds,
-        surface_from_flat=surface_from_flat,
         dimensions_within_tolerance=(report.get("dimensions") or {}).get("within_tolerance"),
     )
     report["grade_estimate"] = estimate.to_dict()

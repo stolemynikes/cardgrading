@@ -61,15 +61,11 @@ async def _read_and_validate_upload(upload: UploadFile) -> bytes:
 async def api_grade(
     front: UploadFile = File(...),
     back: UploadFile = File(...),
-    front_angled: UploadFile | None = File(None),
-    back_angled: UploadFile | None = File(None),
     photometric_front: list[UploadFile] = File(default_factory=list),
     photometric_back: list[UploadFile] = File(default_factory=list),
     dpi: float | None = Form(None),
     rotation: str = Form("cw"),
 ):
-    if (front_angled is None) != (back_angled is None):
-        raise HTTPException(400, "front_angled and back_angled must be provided together, or not at all")
     # Which way the card was turned decides which light direction each frame
     # is solved against. An unrecognised value would quietly produce a wrong
     # normal map instead of an error, so it is rejected rather than defaulted.
@@ -91,10 +87,7 @@ async def api_grade(
     # large — left an orphaned job-<id> directory and a permanently "queued"
     # job record behind forever, since neither is cleaned up outside
     # run_job's own try/finally, which never runs if validation fails first.
-    has_surface = front_angled is not None and back_angled is not None
     uploads = [("front", front), ("back", back)]
-    if has_surface:
-        uploads += [("front_angled", front_angled), ("back_angled", back_angled)]
     file_bytes = {name: await _read_and_validate_upload(upload) for name, upload in uploads}
     photometric_bytes = {
         side: [await _read_and_validate_upload(scan) for scan in scans]
@@ -110,14 +103,6 @@ async def api_grade(
     back_path = job_root / "back_upload"
     front_path.write_bytes(file_bytes["front"])
     back_path.write_bytes(file_bytes["back"])
-
-    surface_paths = None
-    if has_surface:
-        front_angled_path = job_root / "front_angled_upload"
-        back_angled_path = job_root / "back_angled_upload"
-        front_angled_path.write_bytes(file_bytes["front_angled"])
-        back_angled_path.write_bytes(file_bytes["back_angled"])
-        surface_paths = (front_angled_path, back_angled_path)
 
     # Order matters: the scans are the card rotated a further 90 degrees on
     # the glass each time, and the solve maps the k-th scan to the k-th light
@@ -144,7 +129,6 @@ async def api_grade(
             thresholds,
             output_dir,
             job_root,
-            surface_paths,
             dpi=dpi,
             photometric_paths=(photometric_paths["front"], photometric_paths["back"]),
             rotation=rotation,

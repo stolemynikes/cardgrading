@@ -113,7 +113,7 @@ def _image_to_data_uri(path: Path) -> str:
     return f"data:image/png;base64,{data}"
 
 
-def _image_paths(output_dir: Path, has_surface: bool) -> dict[str, Path]:
+def _image_paths(output_dir: Path) -> dict[str, Path]:
     """Every overlay/debug image grade_card() writes, keyed by the stable name
     the frontend knows about. Paths only — the caller decides whether to
     encode them for a response or copy them into the report store.
@@ -158,12 +158,6 @@ def _image_paths(output_dir: Path, has_surface: bool) -> dict[str, Path]:
             "edge_left",
         ):
             candidates[f"{side}_{region}"] = output_dir / "corners_edges" / side / f"{region}.png"
-    if has_surface:
-        for side in ("front", "back"):
-            candidates[f"{side}_surface_aligned"] = output_dir / "surface" / f"{side}_aligned.png"
-            candidates[f"{side}_surface_defect_map"] = output_dir / "surface" / f"{side}_defect_map.png"
-            candidates[f"{side}_surface_annotated"] = output_dir / "surface" / f"{side}_annotated.png"
-
     return {key: path for key, path in candidates.items() if path.exists()}
 
 
@@ -175,11 +169,11 @@ DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"}) | frozenset(
 )
 
 
-def _collect_images(output_dir: Path, has_surface: bool) -> dict[str, str]:
+def _collect_images(output_dir: Path) -> dict[str, str]:
     """The same images, base64-encoded for a JSON response."""
     return {
         key: _image_to_data_uri(path)
-        for key, path in _image_paths(output_dir, has_surface).items()
+        for key, path in _image_paths(output_dir).items()
         if key not in DETAIL_IMAGE_KEYS
     }
 
@@ -191,7 +185,6 @@ async def run_job(
     thresholds: dict,
     output_dir: Path,
     job_root: Path,
-    surface_paths: tuple[Path, Path] | None,
     dpi: float | None = None,
     photometric_paths: tuple[list[Path] | None, list[Path] | None] = (None, None),
     rotation: str = "cw",
@@ -217,7 +210,6 @@ async def run_job(
                     back_path,
                     thresholds,
                     output_dir,
-                    surface_paths=surface_paths,
                     verbose=False,
                     on_stage=on_stage,
                     dpi=dpi,
@@ -225,8 +217,7 @@ async def run_job(
                     rotation=rotation,
                 ),
             )
-            has_surface = surface_paths is not None
-            images = _collect_images(output_dir, has_surface=has_surface)
+            images = _collect_images(output_dir)
 
             # The job id doubles as the report id: the client already has it
             # from the grade call, so the permalink it shows needs no extra
@@ -236,8 +227,16 @@ async def run_job(
             report_id = None
             if reports_dir is not None:
                 try:
-                    store.save_report(reports_dir, job_id, report, _image_paths(output_dir, has_surface))
+                    store.save_report(reports_dir, job_id, report, _image_paths(output_dir))
                     report_id = job_id
+                    # Bound the reports directory here rather than discovering
+                    # its size the next time a grade can't write. Failing to
+                    # prune must not cost the report that just succeeded, so
+                    # it's swallowed — the worst case is the old behaviour.
+                    try:
+                        store.prune_report_images(reports_dir)
+                    except OSError:
+                        pass
                 except OSError as e:
                     job.save_error = str(e)
 

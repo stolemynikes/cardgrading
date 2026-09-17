@@ -97,7 +97,7 @@ def test_measured_surface_defects_are_listed():
     report = _report(
         surface={
             "front": {"grade": 6, "defect_area_pct": 1.25, "defect_count": 4,
-                      "longest_defect_px": 820, "upper_bound": False},
+                      "longest_defect_px": 820},
         }
     )
     surface_dings = [d for d in dings.collect_dings(report) if d["attribute"] == "surface"]
@@ -106,20 +106,12 @@ def test_measured_surface_defects_are_listed():
     assert "820px" in surface_dings[0]["detail"]
 
 
-def test_upper_bound_surface_says_so():
-    report = _report(
-        surface={"front": {"grade": 6, "defect_area_pct": 1.0, "defect_count": 2,
-                           "longest_defect_px": 100, "upper_bound": True}}
-    )
-    assert "upper bound" in dings.collect_dings(report)[0]["detail"]
-
-
 def test_ungraded_surface_produces_no_ding():
     """The single-capture approximation leaks print into the signal, so its
     defect count would include printed linework — worse than saying nothing."""
     report = _report(
         surface={"front": {"grade": None, "defect_area_pct": 9.9, "defect_count": 300,
-                           "longest_defect_px": 1400, "upper_bound": False}}
+                           "longest_defect_px": 1400}}
     )
     assert dings.collect_dings(report) == []
 

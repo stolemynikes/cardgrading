@@ -366,32 +366,6 @@ def detect_uneven_lighting(warped: np.ndarray, cfg: dict) -> QualityGate:
     return QualityGate("uneven_lighting", passed, f"border-ring brightness gradient={gradient:.1f}", gradient)
 
 
-def align_for_surface(image: np.ndarray, thresholds: dict) -> DetectResult:
-    """Lightweight alignment for the angled raking-light surface shot.
-
-    Skips the tilt/uneven-lighting/glare gates used by detect_and_normalize:
-    those assume a flat, evenly-lit overhead capture, but the surface shot
-    is deliberately angled with directional raking light to make scratches
-    and print lines visible via shadow — enforcing those gates here would
-    reject a correctly-captured photo by design. Only resolution and
-    successful card detection are hard requirements to proceed.
-    """
-    cap_cfg = thresholds["capture"]
-    gates: list[QualityGate] = [check_resolution(image, cap_cfg)]
-
-    corners = find_card_contour(image)
-    if corners is None:
-        gates.append(QualityGate("card_detection", False, "no card contour found"))
-        return DetectResult(ok=False, warped=None, gates=gates, contour=None)
-    gates.append(QualityGate("card_detection", True, "card contour found"))
-
-    size = (cap_cfg["canonical_width_px"], cap_cfg["canonical_height_px"])
-    warped = perspective_correct(image, corners, size)
-
-    ok = all(g.passed for g in gates)
-    return DetectResult(ok=ok, warped=warped, gates=gates, contour=corners)
-
-
 # The canonical warp is a measurement surface: 1500x2100 across a 63mm card,
 # ~605 dpi, and every threshold in thresholds.json is calibrated against it.
 # It is not a viewing surface. A 1200dpi scan carries about 2.5x that detail

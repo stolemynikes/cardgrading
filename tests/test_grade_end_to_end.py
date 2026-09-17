@@ -30,8 +30,19 @@ def _card(seed: int = 0) -> np.ndarray:
     width = int(round(height * CARD_ASPECT))
     card = np.full((height, width, 3), 225, np.uint8)
     border = int(width * 0.08)
+    inner = (height - 2 * border, width - 2 * border)
     rng = np.random.default_rng(seed)
-    card[border:-border, border:-border] = rng.integers(40, 200, (height - 2 * border, width - 2 * border, 3), dtype=np.uint8)
+    fine = rng.integers(40, 200, (*inner, 3), dtype=np.uint8)
+    # Artwork at two scales. The fine noise is what the corner, edge and
+    # surface measurements read. The coarse blocks are what survives being
+    # downsampled to a thumbnail — without them two different seeds average
+    # to the same flat gray, and every pair of "different" cards correlates
+    # at 0.99, which is the reading the same-side check is looking for.
+    coarse = cv2.resize(
+        rng.integers(0, 255, (11, 8, 3), dtype=np.uint8), (inner[1], inner[0]),
+        interpolation=cv2.INTER_NEAREST,
+    )
+    card[border:-border, border:-border] = (fine * 0.45 + coarse * 0.55).astype(np.uint8)
     # Asymmetric mark, so a half-turn is distinguishable from upright.
     card[border : border + 40, border : border + 200] = 20
     return card
@@ -67,8 +78,9 @@ class TestFlatCaptureOnly:
 
     def test_every_section_is_present(self, capture):
         report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
-        for section in ("capture_quality", "card_vision", "centering", "corners_edges", "surface",
-                        "dimensions", "grade_estimate", "subgrades", "dings"):
+        for section in ("capture_quality", "capture_pair", "card_vision", "centering",
+                        "corners_edges", "surface", "dimensions", "grade_estimate",
+                        "subgrades", "dings"):
             assert section in report, f"missing {section}"
 
     def test_the_report_is_json_serializable(self, capture):
@@ -93,6 +105,18 @@ class TestFlatCaptureOnly:
     def test_dimensions_are_unmeasurable_without_a_dpi(self, capture):
         report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
         assert report["dimensions"]["measurable"] is False
+
+    def test_two_real_sides_raise_no_same_side_warning(self, capture):
+        report = grade_card(capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False)
+        assert report["capture_pair"]["same_side_suspected"] is False
+
+    def test_the_same_file_twice_still_grades_but_says_so(self, capture):
+        """The check warns; it must not turn a gradeable pair into an error.
+        Grading one side against both tolerance tables is something the user
+        has deliberately asked for."""
+        report = grade_card(capture["front"], capture["front"], THRESHOLDS, capture["out"], verbose=False)
+        assert report["capture_pair"]["same_side_suspected"] is True
+        assert report["grade_estimate"]["overall_grade_rounded"] is not None
 
 
 class TestWithRotationScans:

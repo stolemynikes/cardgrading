@@ -13,8 +13,6 @@ Manifest format (JSON array):
     "name": "charizard_base_set",
     "front": "cards/charizard_front.jpg",
     "back": "cards/charizard_back.jpg",
-    "front_angled": "cards/charizard_front_angled.jpg",
-    "back_angled": "cards/charizard_back_angled.jpg",
     "actual_grade": {
       "overall": 9,
       "centering": 9,
@@ -24,8 +22,8 @@ Manifest format (JSON array):
   }
 ]
 
-front_angled/back_angled and every key in actual_grade are optional — only
-the categories you provide get scored. Image paths are resolved relative to
+Every key in actual_grade is optional — only the categories you provide get
+scored. Image paths are resolved relative to
 the manifest file's own directory.
 
 Usage:
@@ -56,8 +54,6 @@ class CardEntry:
     name: str
     front: Path
     back: Path
-    front_angled: Path | None
-    back_angled: Path | None
     actual_grade: dict
 
 
@@ -71,8 +67,6 @@ def load_manifest(path: Path) -> list[CardEntry]:
                 name=item["name"],
                 front=base / item["front"],
                 back=base / item["back"],
-                front_angled=(base / item["front_angled"]) if item.get("front_angled") else None,
-                back_angled=(base / item["back_angled"]) if item.get("back_angled") else None,
                 actual_grade=item.get("actual_grade", {}),
             )
         )
@@ -210,10 +204,9 @@ def main(argv: list[str]) -> int:
 
     rows = []
     for entry in entries:
-        surface_paths = (entry.front_angled, entry.back_angled) if entry.front_angled and entry.back_angled else None
         card_dir = args.output_dir / entry.name
         try:
-            report = grade_card(entry.front, entry.back, thresholds, card_dir, surface_paths=surface_paths, verbose=False)
+            report = grade_card(entry.front, entry.back, thresholds, card_dir, verbose=False)
         except (FileNotFoundError, ValueError) as e:
             print(f"[{entry.name}] FAILED: {e}")
             continue

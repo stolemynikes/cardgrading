@@ -64,11 +64,6 @@ solidity, and size — on busy/textured backgrounds a single Otsu split tends to
 the card and background into one blob, which the old "largest contour wins" rule
 would then grade as if it were the card.
 
-There's a second, lighter entry point, `align_for_surface()`, used only for the angled
-raking-light surface shot — it skips the tilt/glare/uneven-lighting gates, since that
-shot is *deliberately* angled and unevenly lit by design (that's what makes raking
-light work), and those gates would reject a correctly-captured photo.
-
 ### Stage 1.5 — Dimensions (`pipeline/dimensions.py`)
 Measures the card's real physical size in millimetres against the 63×88mm nominal,
 catching miscuts, diamond cuts and trimming — defects of the card itself rather than
@@ -182,7 +177,7 @@ the card identical, so any pixel whose brightness *flips* between the two is bei
 shaded by geometry. The script reports that flipped fraction and says whether the
 solve is worth running. A "too flat" verdict doesn't make the scanner useless — it's
 still the better capture for centering, corners/edges and dimensions; it just means
-surface work stays with raking-light photos.
+that scanner can't support a surface grade.
 
 ### Stage 2 — Centering (`pipeline/centering.py`)
 Pure geometry: finds the boundary between the card's printed border and its inner
@@ -254,11 +249,11 @@ What the signal is decides how much weight it carries:
 | Source | What it is | Graded? |
 |---|---|---|
 | `photometric_relief` | solved surface normals | yes — print and foil are absent from a normal map |
-| `raking_defect_map` | holo-masked defect map from an angled photo | yes, as an **upper bound** — print survives the mask |
 | `single_image_relief` | one-capture Card Vision approximation | no — print demonstrably leaks in |
 
-This used to require a vision model, and for a raking-light photo that was the right
-call: a fixed threshold genuinely cannot separate a scratch from holo sparkle.
+This used to require a vision model, and for the raking-light photo it used to start
+from that was the right call: a fixed threshold genuinely cannot separate a scratch
+from holo sparkle.
 **Photometric stereo removes the premise.** A surface-normal map contains no albedo,
 so foil, artwork and print lines are gone before anything is measured, and a
 threshold against that signal is a measurement rather than a guess.
@@ -273,6 +268,14 @@ Two providers, chosen by whichever key is configured — `ANTHROPIC_API_KEY` (or
 `ant auth login` profile) for Claude, else `GEMINI_API_KEY` for Gemini's free tier.
 **With neither, the card still grades.** Every sub-grade is measured by `pipeline/`;
 skipping identification costs a name and the market line, nothing else.
+
+One part of that sanity check is duplicated offline in `grade.py`, because it's the
+one failure that's both easy to hit and completely silent: uploading the same side
+twice produces a full, confident report in which every "back" number was measured on
+the front and scored against PSA's looser back table. `check_capture_pair()` hashes
+the two files and correlates their thumbnails, and the report carries the result under
+`capture_pair`. It warns — it never refuses. Grading one side against both tolerance
+tables is a legitimate thing to do deliberately.
 
 ### Stage 5 — Grade assembly (`pipeline/scoring.py`)
 Combines the three sub-grades (centering, corners/edges, surface) into one overall
@@ -330,9 +333,6 @@ Then either `source .venv/bin/activate` or call `.venv/bin/python` directly.
 .venv/bin/python grade.py front.jpg back.jpg \
     --photometric-front r0.jpg r90.jpg r180.jpg r270.jpg \
     --photometric-back  b0.jpg b90.jpg b180.jpg b270.jpg
-
-# Legacy: a single angled raking-light shot per side still grades, as an upper bound
-.venv/bin/python grade.py front.jpg back.jpg --surface front_angled.jpg back_angled.jpg
 
 # Flatbed scans: --dpi makes dimensions measurable (miscut/trim detection)
 .venv/bin/python grade.py front.tif back.tif --dpi 1200
@@ -407,16 +407,14 @@ Manifest format:
     "name": "charizard_base_set",
     "front": "cards/charizard_front.jpg",
     "back": "cards/charizard_back.jpg",
-    "front_angled": "cards/charizard_front_angled.jpg",
-    "back_angled": "cards/charizard_back_angled.jpg",
     "actual_grade": { "overall": 9, "centering": 9, "corners_edges": 8, "surface": 9 }
   }
 ]
 ```
 
 `--fit` needs at least 6 cards with complete data (an actual overall grade, plus
-predicted centering/corners_edges/surface — the last requires `--surface` photos and
-working API credentials for every card in the batch) before it'll touch
+predicted centering/corners_edges/surface — the last requires a photometric rotation
+set for every card in the batch) before it'll touch
 `thresholds.json`; below that it reports how many more you need and leaves the
 existing config alone. Every stage's per-card debug output (aligned images, overlays,
 defect maps) gets written under `output/calibration/<card-name>/` so you can look at
@@ -434,7 +432,7 @@ cloudflared tunnel --url http://localhost:8000
 ```
 
 - **Guided live-camera capture**: a card-shaped guide box, step sequence
-  (front → back → optional angled surface shots), 4K camera request, and a
+  (front → back), 4K camera request, and a
   photo-picker fallback when no camera is available.
 - **Live pre-checks** on the viewfinder (coarse, client-side, never block the
   shutter): too dark, no card detected (red), too little color, glare, too far
@@ -443,9 +441,16 @@ cloudflared tunnel --url http://localhost:8000
 - **Hard vs soft gate handling**: geometry failures bounce back to the failing
   step with a retake message; quality failures grade anyway with a red
   "grading might be worse because of" banner at the top of the report.
-- **No accounts, no persistence**: uploads live in a per-job temp dir deleted in
-  a `finally`; stale temp dirs are swept on startup. The vision judgment (Stage
-  4.5) is optional — the app works fully without API credentials.
+- **No accounts**: uploads live in a per-job temp dir deleted in a `finally`;
+  stale temp dirs are swept on startup. The vision judgment (Stage 4.5) is
+  optional — the app works fully without API credentials.
+- **Finished reports are kept** under `reports/<job-id>/`, and bounded there. A
+  photometric report is ~140MB, most of it the full-scale detail warps and the
+  stored rotation scans, which exist only to be zoomed into. After each save,
+  `store.prune_report_images()` drops those from all but the ten newest reports
+  (`DEFAULT_KEEP_FULL_IMAGES`). Nothing that was measured is lost: an old report
+  still opens, still shows every overlay, and still re-grades from hand-placed
+  borders — only the zoom falls back to the canonical warp.
 - Server binds to localhost only; remote access is via Tailscale or a Cloudflare
   tunnel, never `0.0.0.0`.
 
@@ -505,13 +510,6 @@ output/                       Reports and debug images land here (gitignored)
 
 ## Possible future work
 
-- **Multi-light photometric stereo** for the surface stage: multiple raking-light
-  shots from a fixed camera position, each lit from a different direction, combined to
-  recover actual surface shape (not just contrast) — the technique TAG Grading's
-  "Photometric Stereoscopic Imaging" is based on. Would directly separate physical
-  defects from holo shimmer/print color rather than relying on contrast heuristics.
-  Bigger lift than anything built so far — new capture rig, new CV module, protocol
-  changes — sketched out but not started.
 - **Calibration against professionally graded cards — attempted, negative result
   (2026-07).** TAG DIG scraping was ruled out first: their ToS §5.2(j) explicitly
   prohibits automated collection. Instead, `calibration/fit_from_dataset.py` collected

@@ -140,8 +140,8 @@ def main(argv: list[str]) -> int:
     else:
         verdict = (
             "too flat — the light is effectively coaxial, so rotating the card changes nothing. "
-            "Use raking-light photos for surface work and keep the scanner for centering, "
-            "corners/edges and dimensions, where it is still the better capture"
+            "This scanner can't support a surface grade; keep it for centering, corners/edges "
+            "and dimensions, where it is still the better capture"
         )
     print(f"verdict: {verdict}")
 

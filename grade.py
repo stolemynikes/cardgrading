@@ -7,7 +7,7 @@ The one optional model call identifies the card, which drives the market
 lookup and the full-art note; skipping it costs a name, never a grade.
 
 Usage:
-    python grade.py front.png back.png [--surface front_angled.png back_angled.png]
+    python grade.py front.png back.png
                      [--output-dir output] [--thresholds calibration/thresholds.json]
 
 Card identification uses whichever credentials are configured:
@@ -22,6 +22,7 @@ can reuse it to batch-run the pipeline against cards with known PSA grades.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -42,13 +43,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Pre-grade a Pokemon card from flatbed/overhead scans.")
     parser.add_argument("front", type=Path, help="Path to the front overhead photo")
     parser.add_argument("back", type=Path, help="Path to the back overhead photo")
-    parser.add_argument(
-        "--surface",
-        nargs=2,
-        type=Path,
-        metavar=("FRONT_ANGLED", "BACK_ANGLED"),
-        help="Angled raking-light photos of front/back for surface defect visualization (indicative only)",
-    )
     parser.add_argument(
         "--output-dir", type=Path, default=REPO_ROOT / "output", help="Directory to write reports/debug images"
     )
@@ -133,53 +127,12 @@ def save_region_overlays(card_dir: Path, side_label: str, overlays: dict) -> Non
         cv2.imwrite(str(side_dir / f"{region_name}.png"), overlay_img)
 
 
-def run_surface_side(label: str, angled_path: Path, card_dir: Path, thresholds: dict, verbose: bool = True) -> dict | None:
-    """Build the raking-light defect map for one side.
-
-    Measurement only — the grade is assembled later from whichever surface
-    signal is most trustworthy for this capture (see `surface_grade_for_side`).
-    """
-    angled_img = load_image(angled_path)
-    align_result = detect.align_for_surface(angled_img, thresholds)
-    print_gate_report(f"{label} (angled)", align_result, verbose)
-    # Same hard/soft split as the flat shots: only a missing warp or a
-    # geometry failure skips surface analysis. A soft failure (resolution)
-    # proceeds — the defect map is a signal, not a verdict.
-    if align_result.warped is None or align_result.hard_failures:
-        _log(verbose, f"  skipping surface analysis for {label} — could not align the angled photo")
-        return {
-            "aligned": False,
-            "gates": [{"name": g.name, "passed": g.passed, "detail": g.detail} for g in align_result.gates],
-        }
-
-    result = surface.analyze_surface(align_result.warped, thresholds)
-    surf_dir = card_dir / "surface"
-    surf_dir.mkdir(parents=True, exist_ok=True)
-    cv2.imwrite(str(surf_dir / f"{label}_aligned.png"), align_result.warped)
-    cv2.imwrite(str(surf_dir / f"{label}_defect_map.png"), result.defect_map)
-    cv2.imwrite(str(surf_dir / f"{label}_annotated.png"), result.annotated)
-
-    _log(
-        verbose,
-        f"  {label}: defect area={result.defect_area_pct:.2f}% (of non-holo area), "
-        f"holo masked={result.holo_area_pct:.2f}%, blobs={result.blob_count}, "
-        f"longest={result.longest_defect_px}px",
-    )
-
-    result_dict = result.to_dict()
-    result_dict["aligned"] = True
-    return result_dict
-
-
-def surface_grade_for_side(vision, raking: dict | None, thresholds: dict) -> surface.SurfaceGrade:
+def surface_grade_for_side(vision, thresholds: dict) -> surface.SurfaceGrade:
     """Grade one side's surface from the best signal available.
 
-    Preference order is about trustworthiness, not recency. Solved surface
-    normals contain no albedo, so print and foil cannot be mistaken for
-    damage — that beats a raking-light photo, where the holo mask is a
-    heuristic and some print detail always survives it. The single-capture
-    Card Vision approximation is measured and shown but never graded: print
-    demonstrably leaks into it.
+    Solved surface normals contain no albedo, so print and foil cannot be
+    mistaken for damage. The single-capture Card Vision approximation is
+    measured and shown but never graded: print demonstrably leaks into it.
     """
     # measurement_relief, not relief: the displayed render's gain is a viewing
     # preference, and a viewing preference must not move a measurement.
@@ -187,15 +140,6 @@ def surface_grade_for_side(vision, raking: dict | None, thresholds: dict) -> sur
         measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
         area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
         return surface.grade_surface(area, count, longest, "photometric_relief", thresholds)
-
-    if raking and raking.get("aligned"):
-        return surface.grade_surface(
-            raking["defect_area_pct"],
-            raking["blob_count"],
-            raking.get("longest_defect_px", 0),
-            "raking_defect_map",
-            thresholds,
-        )
 
     if vision is not None:
         measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
@@ -262,6 +206,62 @@ def _orientation_match(warp, reference) -> float:
 # card against its own 180-degree turn scores well under 0.5 on any card with
 # asymmetric artwork, which is all of them.
 MIN_ORIENTATION_CONFIDENCE = 0.55
+
+
+# Above this correlation the two uploads are the same picture, not two sides
+# of one card.
+#
+# The same side scanned twice — card lifted off the glass and put back down —
+# still correlates above 0.99. The other end is not as far away as it looks:
+# two *different* pictures that share a card's layout (same border, same art
+# panel, different artwork) measure 0.74, because at thumbnail size the
+# layout is most of what's left. A real front and back share less than that,
+# but 0.74 is the closest thing to a worst case measurable without a stack of
+# real pairs, so the threshold sits with margin above it rather than at the
+# "near zero" a front and back would actually give.
+SAME_SIDE_CORRELATION = 0.90
+
+
+def check_capture_pair(front_path: Path, back_path: Path, front_warp, back_warp) -> dict:
+    """Are these two uploads really two different sides of one card?
+
+    Worth checking because the failure is silent and expensive: grading the
+    front twice produces a complete, confident report in which every "back"
+    number was measured on the front and scored against PSA's looser back
+    tolerances. Nothing else in the pipeline notices — both images detect,
+    warp and grade perfectly well.
+
+    The vision identify stage already cross-checks this, but it needs an API
+    key and is skipped without one, which is the normal case here. This is
+    the offline version: a file hash catches the same file submitted twice,
+    and the same thumbnail correlation that settles rotation catches a second
+    scan of the same side.
+
+    A warning, never a refusal. Re-grading one side against both tolerance
+    tables is a legitimate thing to do deliberately, and the operator is
+    standing right there.
+    """
+    front_bytes, back_bytes = front_path.read_bytes(), back_path.read_bytes()
+    identical = hashlib.sha256(front_bytes).digest() == hashlib.sha256(back_bytes).digest()
+    similarity = float(_orientation_match(front_warp, back_warp))
+    suspected = identical or similarity >= SAME_SIDE_CORRELATION
+
+    if identical:
+        note = "The front and back uploads are the same file, so the back was graded on the front."
+    elif suspected:
+        note = (
+            f"The front and back scans look like the same side of the card ({similarity:.0%} match). "
+            "If that's not deliberate, the back sub-grades were measured on the front."
+        )
+    else:
+        note = None
+
+    return {
+        "identical_files": identical,
+        "similarity": round(similarity, 3),
+        "same_side_suspected": suspected,
+        "note": note,
+    }
 
 
 def normalise_scan(path: Path, reference_warp, thresholds: dict):
@@ -426,7 +426,6 @@ def grade_card(
     back_path: Path,
     thresholds: dict,
     output_dir: Path,
-    surface_paths: tuple[Path, Path] | None = None,
     verbose: bool = True,
     on_stage: Callable[[str], None] | None = None,
     dpi: float | None = None,
@@ -436,7 +435,6 @@ def grade_card(
 ) -> dict:
     """Run the full pipeline on one card and return the report dict.
 
-    surface_paths, if given, is (front_angled_path, back_angled_path).
     Writes debug images and report.json under output_dir. Does not raise on
     a failed capture-quality gate or a skipped vision review — those are
     recorded in the report instead, so this can run unattended over a batch
@@ -506,6 +504,14 @@ def grade_card(
         report["grade_estimate"] = None
         (output_dir / "report.json").write_text(json.dumps(report, indent=2))
         return report
+
+    # Both sides warped, so the pair can be checked against itself before
+    # anything is measured from it.
+    report["capture_pair"] = check_capture_pair(
+        front_path, back_path, front_result.warped, back_result.warped
+    )
+    if report["capture_pair"]["note"]:
+        _log(verbose, f"\n[capture] {report['capture_pair']['note']}")
 
     # Identify-first, like the commercial AI graders: know what the card IS
     # before measuring it. One vision call covers identification plus a
@@ -633,22 +639,12 @@ def grade_card(
     save_region_overlays(output_dir, "back", ce_overlays["back"])
 
     stage("surface")
-    raking = {"front": None, "back": None}
-    if surface_paths:
-        front_angled_path, back_angled_path = surface_paths
-        _log(verbose, "\n[surface] raking-light defect maps")
-        raking["front"] = run_surface_side("front", front_angled_path, output_dir, thresholds, verbose)
-        raking["back"] = run_surface_side("back", back_angled_path, output_dir, thresholds, verbose)
-    else:
-        _log(verbose, "\n[surface] no raking-light shots — grading from the Card Vision relief")
-
+    _log(verbose, "\n[surface] grading from the Card Vision relief")
     surface_grades = {
-        "front": surface_grade_for_side(front_vision, raking["front"], thresholds),
-        "back": surface_grade_for_side(back_vision, raking["back"], thresholds),
+        "front": surface_grade_for_side(front_vision, thresholds),
+        "back": surface_grade_for_side(back_vision, thresholds),
     }
-    report["surface"] = {
-        side: {**surface_grades[side].to_dict(), "raking": raking[side]} for side in ("front", "back")
-    }
+    report["surface"] = {side: surface_grades[side].to_dict() for side in ("front", "back")}
 
     for side in ("front", "back"):
         sg = surface_grades[side]
@@ -659,16 +655,13 @@ def grade_card(
             f"longest={sg.longest_defect_px}px -> {grade_text} ({sg.source})",
         )
 
-    # The weakest side sets the sub-grade, and the whole thing is only an
-    # upper bound if every side that contributed was itself an upper bound.
+    # The weakest side sets the sub-grade.
     graded = [sg for sg in surface_grades.values() if sg.grade is not None]
     surface_grade = min((sg.grade for sg in graded), default=None)
-    surface_upper_bound = bool(graded) and all(sg.upper_bound for sg in graded)
 
     stage("scoring")
     grade_estimate = scoring.assemble_grade(
         result.overall_grade, ce_result.overall_grade, surface_grade, thresholds,
-        surface_from_flat=surface_upper_bound,
         dimensions_within_tolerance=front_dimensions.within_tolerance,
     )
     report["grade_estimate"] = grade_estimate.to_dict()
@@ -721,7 +714,6 @@ def main(argv: list[str]) -> int:
         args.back,
         thresholds,
         card_dir,
-        surface_paths=tuple(args.surface) if args.surface else None,
         dpi=args.dpi,
         photometric_paths=(args.photometric_front, args.photometric_back),
         lamp_azimuth=args.lamp_azimuth,

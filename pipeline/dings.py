@@ -141,8 +141,6 @@ def _surface_dings(side: str, side_data: dict) -> list[dict]:
     area = side_data.get("defect_area_pct", 0.0)
     longest = side_data.get("longest_defect_px", 0)
     detail = f"{area:.2f}% of the surface, {count} defect(s), longest {longest}px"
-    if side_data.get("upper_bound"):
-        detail += " — upper bound"
 
     return [_ding("surface", side, "surface", grade, detail, f"{side}_card_vision")]
 

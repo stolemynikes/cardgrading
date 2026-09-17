@@ -50,8 +50,8 @@ def _report() -> dict:
         "centering": _centering_block(),
         "corners_edges": {"front": {}, "back": {}, "overall_grade": None},
         "surface": {
-            "front": {"grade": None, "source": "single_image_relief", "upper_bound": False},
-            "back": {"grade": None, "source": "single_image_relief", "upper_bound": False},
+            "front": {"grade": None, "source": "single_image_relief"},
+            "back": {"grade": None, "source": "single_image_relief"},
         },
         "dimensions": {"measurable": False, "within_tolerance": None},
         "grade_estimate": {"overall_grade_rounded": 7, "score": 700},

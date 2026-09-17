@@ -51,10 +51,10 @@ def _holo_wash(img: Image.Image, box, seed: int = 3) -> None:
     """A faint iridescent shimmer over the art window.
 
     Not decoration: holo is the hardest thing for surface detection to tell
-    apart from damage, and `surface._holo_mask` keys off *local variance* of
-    saturation rather than absolute saturation — so the shimmer has to vary
-    at a small spatial scale while staying subtle enough that the artwork
-    still reads. Composited at low alpha rather than drawn opaque, which is
+    apart from damage, and what makes foil distinctive is that its saturation
+    varies at a *small spatial scale* rather than being absolutely high — so
+    the shimmer has to vary the same way while staying subtle enough that the
+    artwork still reads. Composited at low alpha rather than drawn opaque, which is
     the difference between foil and confetti.
     """
     x0, y0, x1, y1 = box

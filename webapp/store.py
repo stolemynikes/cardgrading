@@ -51,6 +51,9 @@ class ReportSummary:
     set_name: str | None
     grade: int | None
     score: int | None
+    # Set once a report has been aged out of full-scale storage: everything
+    # that was measured is still here, but the zoom-in warps are gone.
+    images_pruned: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -60,6 +63,7 @@ class ReportSummary:
             "set_name": self.set_name,
             "grade": self.grade,
             "score": self.score,
+            "images_pruned": self.images_pruned,
         }
 
 
@@ -74,7 +78,9 @@ def report_dir(base_dir: Path, report_id: str) -> Path | None:
     return base_dir / report_id
 
 
-def _summarize(report_id: str, report: dict, created_at: str) -> ReportSummary:
+def _summarize(
+    report_id: str, report: dict, created_at: str, images_pruned: bool = False
+) -> ReportSummary:
     card_id = report.get("card_id") or {}
     grade_estimate = report.get("grade_estimate") or {}
     return ReportSummary(
@@ -84,7 +90,15 @@ def _summarize(report_id: str, report: dict, created_at: str) -> ReportSummary:
         set_name=card_id.get("set_name"),
         grade=grade_estimate.get("overall_grade_rounded"),
         score=grade_estimate.get("score"),
+        images_pruned=images_pruned,
     )
+
+
+def _read_meta(directory: Path) -> dict:
+    try:
+        return json.loads((directory / "meta.json").read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def save_report(base_dir: Path, report_id: str, report: dict, image_paths: dict[str, Path]) -> ReportSummary:
@@ -140,7 +154,11 @@ def load_report(base_dir: Path, report_id: str) -> dict | None:
                 images[image_path.stem] = f"/api/report/{report_id}/image/{image_path.stem}"
             else:
                 images[image_path.stem] = _image_to_data_uri(image_path)
-    return {"report": report, "images": images}
+    return {
+        "report": report,
+        "images": images,
+        "images_pruned": bool(_read_meta(directory).get("images_pruned")),
+    }
 
 
 def image_path(base_dir: Path, report_id: str, key: str) -> Path | None:
@@ -169,12 +187,12 @@ def update_report(base_dir: Path, report_id: str, report: dict, image_paths: dic
     if directory is None or not (directory / "report.json").exists():
         return None
 
-    try:
-        created_at = json.loads((directory / "meta.json").read_text())["created_at"]
-    except (OSError, ValueError, KeyError):
-        created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    meta = _read_meta(directory)
+    created_at = meta.get("created_at") or datetime.now(timezone.utc).isoformat(timespec="seconds")
 
-    summary = _summarize(report_id, report, created_at)
+    # An edit must not un-prune: the flag describes what's on disk, and
+    # rewriting the report doesn't put the deleted warps back.
+    summary = _summarize(report_id, report, created_at, bool(meta.get("images_pruned")))
     # Same staged-write reasoning as save_report, at file granularity: a
     # half-written report.json would make the whole report unreadable.
     report_path = directory / "report.json"
@@ -210,6 +228,71 @@ def list_reports(base_dir: Path, limit: int = 100) -> list[dict]:
 
     summaries.sort(key=lambda s: s.get("created_at") or "", reverse=True)
     return summaries[:limit]
+
+
+# How many reports keep their full-scale images. Everything that was measured
+# is kept forever — report.json, meta.json, and every image the report page
+# shows inline. What ages out is only what exists to be zoomed into: the
+# detail warps and the stored rotation scans.
+#
+# Sized against the disk this runs on. A photometric report is roughly 140MB
+# with those images and 35MB without, so ten full reports is about 1.4GB and
+# every report after that costs a quarter of a gigabyte less than it would
+# have. Before this existed the reports directory had to be emptied by hand
+# five times in one evening.
+DEFAULT_KEEP_FULL_IMAGES = 10
+
+
+def prune_report_images(base_dir: Path, keep_full: int = DEFAULT_KEEP_FULL_IMAGES) -> list[str]:
+    """Drop the view-only images from every report but the newest `keep_full`.
+
+    Returns the ids that were pruned this call. Already-pruned reports are
+    skipped, so this is cheap to run after every save and safe to run twice.
+
+    Deliberately not a delete: the report, its measurements and its overlays
+    survive, so an old report still opens, still shows its grade and still
+    re-grades from hand-placed borders. Only the zoom loses resolution, and
+    it falls back to the canonical warp on its own.
+    """
+    if keep_full < 0:
+        raise ValueError("keep_full must not be negative")
+    if not base_dir.is_dir():
+        return []
+
+    dated = []
+    for child in base_dir.iterdir():
+        if not child.is_dir() or not is_valid_report_id(child.name):
+            continue
+        meta = _read_meta(child)
+        if not meta:
+            # No meta.json means a half-written or foreign directory. Leaving
+            # it alone is the safe reading — it also can't be ordered, and
+            # pruning by guessed age is how the wrong report loses its
+            # images.
+            continue
+        dated.append((meta.get("created_at") or "", child, meta))
+
+    dated.sort(key=lambda item: item[0], reverse=True)
+
+    pruned = []
+    for _, directory, meta in dated[keep_full:]:
+        if meta.get("images_pruned"):
+            continue
+        images_dir = directory / "images"
+        removed = False
+        for key in DETAIL_IMAGE_KEYS:
+            path = images_dir / f"{key}.png"
+            if path.exists():
+                path.unlink()
+                removed = True
+        # Flag it either way: a report with no detail warps to begin with is
+        # already in its pruned state, and marking it stops this walking its
+        # images every time a card is graded.
+        meta["images_pruned"] = True
+        (directory / "meta.json").write_text(json.dumps(meta, indent=2))
+        if removed:
+            pruned.append(directory.name)
+    return pruned
 
 
 def delete_report(base_dir: Path, report_id: str) -> bool:

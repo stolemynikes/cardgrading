@@ -187,7 +187,7 @@ def client(tmp_path, monkeypatch):
             "overall_grade": 10,
         },
         "corners_edges": {"front": {"grade": None}, "back": {"grade": None}, "overall_grade": None},
-        "surface": {"front": {"grade": None, "upper_bound": False}},
+        "surface": {"front": {"grade": None}},
         "dimensions": {"measurable": False, "within_tolerance": None},
         "grade_estimate": {"overall_grade_rounded": 10, "score": 1000},
         "subgrades": {"front": {}, "back": {}},
