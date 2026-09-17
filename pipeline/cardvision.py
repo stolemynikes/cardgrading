@@ -57,6 +57,13 @@ class CardVisionResult:
     # problems — one is a capture that never happened, the other is a capture
     # that did and was rejected without saying so.
     fallback_reason: str | None = None
+    # Scans that were attached but had no detectable card in them, named so
+    # the operator knows which one to redo. Separate from fallback_reason
+    # because a dropped scan doesn't necessarily cost the solve: four scans
+    # carry one spare, and three non-collinear directions still solve. It is
+    # still worth saying — a solve running on three lights instead of four
+    # has less to work with, and nothing else in the report would show it.
+    dropped_scans: list[str] | None = None
     # The rotation measured for each scan, in degrees counter-clockwise from
     # the reference orientation. Recorded because it is the one solve input
     # that used to be asserted rather than measured, and a wrong one produces
@@ -83,6 +90,7 @@ class CardVisionResult:
             "light_count": self.light_count,
             "roughness_pct": round(self.roughness_pct, 3),
             "fallback_reason": self.fallback_reason,
+            "dropped_scans": self.dropped_scans,
             "rotations_deg": self.rotations_deg,
             "registration": self.registration,
             "note": (

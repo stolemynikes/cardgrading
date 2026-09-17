@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from pipeline import dimensions
 
@@ -134,3 +135,54 @@ class TestMeasuringFromSeveralScans:
     def test_an_unknown_dpi_is_still_unmeasurable(self):
         quads = [self._quad(63.0, 88.0), self._quad(63.0, 88.0)]
         assert dimensions.measure_from_scans(quads, None, self.THRESHOLDS).measurable is False
+
+
+
+class TestDeviationsAreAlsoReportedAsProportions:
+    """A trim takes roughly equal millimetres off each axis; a capture
+    measured at the wrong scale is off by roughly equal percentages. In
+    millimetres the two read alike, which is how one real capture came back
+    as "width off by -5.34mm; height off by -8.52mm — miscut or trimmed" when
+    it was 8.5% and 9.7%, i.e. one number entered wrong.
+
+    Both forms are reported and neither is turned into a verdict: a 60x85mm
+    trimmed card and that capture have deviations equally close to
+    proportional, so a rule choosing between them would be guessing.
+    """
+
+    THRESHOLDS = {"dimensions": {"tolerance_mm": 0.75, "squareness_tolerance_deg": 1.0}}
+
+    @staticmethod
+    def _quad(width_mm: float, height_mm: float, dpi: float = 1200.0) -> np.ndarray:
+        w = width_mm / dimensions.MM_PER_INCH * dpi
+        h = height_mm / dimensions.MM_PER_INCH * dpi
+        return np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+
+    def test_the_proportions_are_reported(self):
+        result = dimensions.measure_dimensions(self._quad(57.66, 79.48), 1200.0, self.THRESHOLDS).to_dict()
+        assert result["width_deviation_pct"] == pytest.approx(-8.48, abs=0.05)
+        assert result["height_deviation_pct"] == pytest.approx(-9.68, abs=0.05)
+
+    def test_a_trim_and_a_scale_error_are_told_apart_by_eye_not_by_rule(self):
+        """The evidence a reader needs, stated rather than acted on: equal
+        millimetres off both axes is the trim, equal percentages is the
+        scale error, and both still read as out of tolerance."""
+        trimmed = dimensions.measure_dimensions(self._quad(60.0, 85.0), 1200.0, self.THRESHOLDS).to_dict()
+        assert trimmed["width_deviation_mm"] == pytest.approx(trimmed["height_deviation_mm"], abs=0.05)
+        assert abs(trimmed["width_deviation_pct"] - trimmed["height_deviation_pct"]) > 1.0
+
+        scaled = dimensions.measure_dimensions(self._quad(57.66, 79.48), 1200.0, self.THRESHOLDS).to_dict()
+        assert abs(scaled["width_deviation_mm"] - scaled["height_deviation_mm"]) > 3.0
+
+        for result in (trimmed, scaled):
+            assert result["within_tolerance"] is False
+
+    def test_a_correct_card_reads_zero_on_both(self):
+        result = dimensions.measure_dimensions(self._quad(63.0, 88.0), 1200.0, self.THRESHOLDS).to_dict()
+        assert result["width_deviation_pct"] == pytest.approx(0.0, abs=0.01)
+        assert result["height_deviation_pct"] == pytest.approx(0.0, abs=0.01)
+
+    def test_an_unmeasurable_capture_reports_nothing_rather_than_zero(self):
+        result = dimensions.measure_dimensions(None, None, self.THRESHOLDS).to_dict()
+        assert result["width_deviation_pct"] is None
+        assert result["height_deviation_pct"] is None

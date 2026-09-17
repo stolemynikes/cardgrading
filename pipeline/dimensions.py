@@ -57,6 +57,20 @@ class DimensionsResult:
             "nominal_height_mm": NOMINAL_HEIGHT_MM,
             "width_deviation_mm": r(self.width_deviation_mm),
             "height_deviation_mm": r(self.height_deviation_mm),
+            # The same two numbers as proportions. A trim takes roughly equal
+            # *millimetres* off each axis; a capture measured at the wrong
+            # scale is off by roughly equal *percentages*. In millimetres the
+            # two read alike — one real measurement came out "5.34mm narrow
+            # and 8.52mm short", which sounds like a butchered card and is
+            # 8.5% and 9.7% — so both forms are reported and the reader is
+            # left to judge, because the two cases genuinely overlap and a
+            # rule that picked between them would be guessing.
+            "width_deviation_pct": r(
+                None if self.width_mm is None else 100.0 * self.width_deviation_mm / NOMINAL_WIDTH_MM, 2
+            ),
+            "height_deviation_pct": r(
+                None if self.height_mm is None else 100.0 * self.height_deviation_mm / NOMINAL_HEIGHT_MM, 2
+            ),
             "squareness_deviation_deg": r(self.squareness_deviation_deg),
             "within_tolerance": self.within_tolerance,
             "spread_mm": r(self.spread_mm),

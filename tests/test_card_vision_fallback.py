@@ -80,21 +80,48 @@ class TestFallbackReason:
         vision = grade_module.build_card_vision(
             "front", warped, scans, tmp_path, THRESHOLDS, 90.0, "ccw", verbose=False
         )
-        reason = vision.to_dict()["fallback_reason"]
-        assert vision.method == "single_image"
-        assert "bad.png" in reason
-        assert "4 of 4" in reason or "scan 4" in reason
+        assert any("bad.png" in entry for entry in vision.to_dict()["dropped_scans"])
 
-    def test_the_whole_set_is_dropped_not_the_bad_scan_alone(self, tmp_path, warped):
-        """Solving three of four would silently change which light direction
-        each surviving frame is attributed to."""
-        scans = [_scan_on_background(tmp_path, f"s{i}.png", index=i) for i in range(3)]
-        scans.insert(1, _scan_on_background(tmp_path, "bad.png", blank=True, index=1))
+    def test_the_bad_scan_is_dropped_not_the_whole_set(self, tmp_path, warped):
+        """This used to drop all four, on the reasoning that solving three
+        would change which light direction each surviving frame was
+        attributed to. That reasoning stopped being true once the azimuths
+        came from each scan's *measured* rotation instead of its position in
+        the file list — a dropped scan now takes its own light direction with
+        it and moves nobody else's. Three non-collinear directions solve, and
+        a four-scan set carries exactly one spare."""
+        # Built at their final positions: each scan's turn on the glass has to
+        # match where it sits in the list, or the fixture — not the code —
+        # decides what the rotations come out as.
+        scans = [
+            _scan_on_background(tmp_path, "s0.png", index=0),
+            _scan_on_background(tmp_path, "bad.png", blank=True, index=1),
+            _scan_on_background(tmp_path, "s2.png", index=2),
+            _scan_on_background(tmp_path, "s3.png", index=3),
+        ]
         vision = grade_module.build_card_vision(
             "front", warped, scans, tmp_path, THRESHOLDS, 90.0, "ccw", verbose=False
         )
-        assert vision.light_count == 1
-        assert "whole set was dropped" in vision.to_dict()["fallback_reason"]
+        assert vision.method == "photometric_stereo"
+        assert vision.light_count == 3
+        assert vision.to_dict()["fallback_reason"] is None
+
+        # The property that makes dropping safe: each surviving frame keeps
+        # the rotation it would have had in a complete set, rather than
+        # sliding up to fill the gap. Compared against the full run rather
+        # than against hand-written numbers, because the point is that they
+        # agree — not what they happen to be.
+        full = grade_module.build_card_vision(
+            "front",
+            warped,
+            [_scan_on_background(tmp_path, f"f{i}.png", index=i) for i in range(4)],
+            tmp_path,
+            THRESHOLDS,
+            90.0,
+            "ccw",
+            verbose=False,
+        )
+        assert vision.rotations_deg == [full.rotations_deg[i] for i in (0, 2, 3)]
 
     def test_a_successful_solve_carries_no_reason(self, tmp_path, warped):
         scans = [_scan_on_background(tmp_path, f"s{i}.png", index=i) for i in range(4)]

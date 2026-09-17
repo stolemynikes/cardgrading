@@ -2209,6 +2209,19 @@ function dimensionsHTML(report) {
     dim.spread_mm === null || dim.spread_mm === undefined
       ? ""
       : `<span class="muted mono" title="How far apart the ${dim.sample_count} scans of this card were. A single scan has nothing to check itself against.">${dim.sample_count} scans agree to ${dim.spread_mm.toFixed(2)} mm</span>`;
+  // The deviations as proportions as well as millimetres. A trim takes
+  // roughly equal millimetres off each axis; a capture measured at the wrong
+  // scale is off by roughly equal percentages — and in millimetres alone
+  // those look the same. Shown side by side rather than judged, because the
+  // two cases genuinely overlap.
+  const pct =
+    dim.width_deviation_pct === null || dim.width_deviation_pct === undefined
+      ? ""
+      : `<span class="muted mono" title="A trim is off by similar millimetres on both axes; a capture at the wrong scale is off by similar percentages.">off by ${dim.width_deviation_mm.toFixed(2)} &times; ${dim.height_deviation_mm.toFixed(2)} mm (${dim.width_deviation_pct.toFixed(1)}% &times; ${dim.height_deviation_pct.toFixed(1)}%)</span>`;
+  const scale =
+    report.capture_dpi === null || report.capture_dpi === undefined
+      ? ""
+      : `<span class="muted mono" title="Every millimetre here is measured against this. A wrong value reads as a miscut card.">measured at ${Math.round(report.capture_dpi)} dpi</span>`;
   return `<section class="report-section">
     <h2>Dimensions</h2>
     <div class="dimension-row">
@@ -2216,6 +2229,10 @@ function dimensionsHTML(report) {
       <span class="muted mono">nominal ${dim.nominal_width_mm} &times; ${dim.nominal_height_mm}</span>
       <span class="muted mono">out of square ${dim.squareness_deviation_deg.toFixed(2)}&deg;</span>
       ${agreement}
+    </div>
+    <div class="dimension-row">
+      ${pct}
+      ${scale}
     </div>
     <div class="banner ${bannerClass}">${escapeHtml(dim.note)}</div>
   </section>`;

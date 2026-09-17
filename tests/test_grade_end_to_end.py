@@ -126,6 +126,48 @@ class TestWithRotationScans:
     def photometric(self, tmp_path):
         return [_scan(tmp_path, f"rot{i}.png", ccw_on_glass=-90 * i) for i in range(4)]
 
+    def test_one_undetectable_scan_costs_that_scan_not_the_set(self, capture, photometric, tmp_path):
+        """Four scans carry one spare: three non-collinear directions still
+        solve. Dropping the whole set for one bad scan cost a capture
+        session's surface grade over a single card that sat off the glass."""
+        blank = tmp_path / "blank.png"
+        cv2.imwrite(str(blank), np.full((1400, 1400, 3), 10, np.uint8))
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=([photometric[0], blank, photometric[2], photometric[3]], None),
+        )
+        vision = report["card_vision"]["front"]
+        assert vision["method"] == "photometric_stereo"
+        assert vision["light_count"] == 3
+        # It solved, so there is no fallback — but the dropped scan is named,
+        # because nothing else in the report would show three lights where
+        # four were attached.
+        assert vision["fallback_reason"] is None
+        assert any("blank.png" in entry for entry in vision["dropped_scans"])
+
+    def test_two_undetectable_scans_do_fall_back(self, capture, photometric, tmp_path):
+        """Two left is below the three the solve needs, and it says so rather
+        than solving from a degenerate set."""
+        blank = tmp_path / "blank2.png"
+        cv2.imwrite(str(blank), np.full((1400, 1400, 3), 10, np.uint8))
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=([photometric[0], blank, blank, photometric[3]], None),
+        )
+        vision = report["card_vision"]["front"]
+        assert vision["method"] != "photometric_stereo"
+        assert "at least 3" in vision["fallback_reason"]
+        assert len(vision["dropped_scans"]) == 2
+
+    def test_the_capture_scale_is_recorded(self, capture, photometric):
+        """Every millimetre in the report rests on this, and a wrong value is
+        indistinguishable from a miscut card — so the report has to state it."""
+        report = grade_card(
+            capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        assert report["capture_dpi"] == DPI
+
     def test_a_full_photometric_run_completes(self, capture, photometric):
         report = grade_card(
             capture["front"], capture["back"], THRESHOLDS, capture["out"], verbose=False,

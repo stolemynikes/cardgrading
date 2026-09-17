@@ -334,6 +334,7 @@ def build_card_vision(
     rotations: list[int] = []
     detected: list[dict] = []
     quads: list = []
+    dropped: list[str] = []
     fallback_reason = None
     if not photometric_paths:
         fallback_reason = "no rotation scans were provided for this side"
@@ -347,14 +348,15 @@ def build_card_vision(
         for i, scan_path in enumerate(photometric_paths):
             warp, ccw, confident, scan_diagnostics = normalise_scan(scan_path, flat_warped, thresholds)
             if warp is None:
-                fallback_reason = (
-                    f"rotation scan {i + 1} of {len(photometric_paths)} ({scan_path.name}) couldn't be "
-                    "normalised at any orientation — no card contour was found in it. The solve needs "
-                    "every scan, so the whole set was dropped."
-                )
-                _log(verbose, f"  {side_label}: {fallback_reason}")
-                warps = []
-                break
+                # Drop the scan, not the set. Photometric stereo needs three
+                # non-collinear light directions, and a four-scan set has one
+                # to spare — throwing the other three away for the sake of the
+                # one that didn't detect cost a whole capture session's
+                # surface grade over a single card that sat slightly off the
+                # glass.
+                dropped.append(f"scan {i + 1} of {len(photometric_paths)} ({scan_path.name})")
+                _log(verbose, f"  {side_label}: no card contour in {dropped[-1]} — dropping that scan")
+                continue
             if not confident:
                 # The pixels didn't settle it — a near-symmetrical side, or a
                 # scan too dark to correlate. Fall back on what the operator
@@ -372,6 +374,13 @@ def build_card_vision(
             quads.append(scan_diagnostics.pop("contour", None))
             detected.append(scan_diagnostics)
 
+    if dropped and len(warps) < 3:
+        fallback_reason = (
+            f"no card contour was found in {', '.join(dropped)}, leaving {len(warps)} of "
+            f"{len(photometric_paths)} scans usable — photometric stereo needs at least 3."
+        )
+        _log(verbose, f"  {side_label}: {fallback_reason}")
+
     if len(warps) >= 3:
         # A card turned clockwise by theta moves the lamp clockwise by theta
         # in the card's frame, and the counter-clockwise rotation needed to
@@ -388,6 +397,7 @@ def build_card_vision(
             warps, azimuths, cfg, registration_reference=flat_warped
         )
         vision.rotations_deg = rotations
+        vision.dropped_scans = dropped or None
         # Fold what the detector found in each scan in with how well that
         # scan then aligned: together they say whether a misaligned set is a
         # capture problem or an alignment one.
@@ -399,6 +409,7 @@ def build_card_vision(
     else:
         vision = cardvision.single_image_card_vision(flat_warped, cfg)
         vision.fallback_reason = fallback_reason
+        vision.dropped_scans = dropped or None
 
     cv2.imwrite(str(output_dir / f"{side_label}_card_vision.png"), vision.relief)
     # The normalised rotation scans, kept so the solve can be re-run later
@@ -467,6 +478,12 @@ def grade_card(
     report: dict = {
         "front_image": str(front_path),
         "back_image": str(back_path),
+        # The scale every millimetre in this report rests on. Recorded because
+        # a wrong one is indistinguishable from a miscut card: the dimensions
+        # stage reported a card 5.34mm narrow and 8.52mm short — a 9% error on
+        # both axes at once, which is a scale mistake, not a trim — and the
+        # report gave no way to check the number it had been handed.
+        "capture_dpi": dpi,
         "capture_quality": {
             "front": front_result.to_dict(),
             "back": back_result.to_dict(),
