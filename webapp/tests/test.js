@@ -2178,6 +2178,38 @@ async function runTest10b() {
     assert(dom.window.document.getElementById("report-view").hidden === false, "renders without box data");
   }
 
+  // --- Test 2r: scans are not re-encoded on the way to the server ---
+  {
+    const dom = makeDom();
+    const win = dom.window;
+    const file = (name, type) => new win.File([new Uint8Array(64)], name, { type });
+
+    for (const [name, type] of [["scan.png", "image/png"], ["scan.tif", "image/tiff"], ["scan.tiff", "image/tiff"]]) {
+      const original = file(name, type);
+      const processed = await win.processImageFile(original);
+      assert(processed === original, `${name} is handed through untouched, not resampled and JPEG'd`);
+    }
+
+    // A file whose type the browser didn't fill in is judged by its name.
+    const byName = file("scan.PNG", "");
+    assert((await win.processImageFile(byName)) === byName, "extension decides when the MIME type is missing");
+
+    // Camera captures still get the EXIF fix and downscale they exist for.
+    // createImageBitmap is stubbed out in jsdom, so this falls through its
+    // catch and returns the original — what matters is that it tried.
+    let attempted = false;
+    win.createImageBitmap = async () => {
+      attempted = true;
+      throw new Error("no canvas in jsdom");
+    };
+    await win.processImageFile(file("photo.jpg", "image/jpeg"));
+    assert(attempted, "a phone photo still goes through orientation and downscale");
+
+    attempted = false;
+    await win.processImageFile(file("scan.png", "image/png"));
+    assert(!attempted, "a scan does not");
+  }
+
   console.log(failures === 0 ? "\nALL TESTS PASSED" : `\n${failures} TEST(S) FAILED`);
   process.exit(failures === 0 ? 0 : 1);
 })();

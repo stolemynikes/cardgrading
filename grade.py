@@ -205,6 +205,11 @@ def surface_grade_for_side(vision, raking: dict | None, thresholds: dict) -> sur
     return surface.grade_surface(0.0, 0, 0, "single_image_relief", thresholds)
 
 
+# The most rotation scans a set can hold, and so the most warps kept with a
+# report. Matches the upload cap in webapp/main.py.
+MAX_PHOTOMETRIC_SCANS_KEPT = 6
+
+
 def load_derotated(path: Path, index: int, direction: str):
     """Load the index-th photometric scan and undo the physical rotation.
 
@@ -396,6 +401,12 @@ def build_card_vision(
         vision.fallback_reason = fallback_reason
 
     cv2.imwrite(str(output_dir / f"{side_label}_card_vision.png"), vision.relief)
+    # The normalised rotation scans, kept so the solve can be re-run later
+    # without the card going back on the glass. They are the only inputs the
+    # photometric path has, and discarding them meant every change to the
+    # solve cost a rescan — four times, over one evening.
+    for index, warp in enumerate(warps):
+        cv2.imwrite(str(output_dir / f"{side_label}_rotation_{index}.png"), warp)
     if vision.normal_map is not None:
         cv2.imwrite(str(output_dir / f"{side_label}_card_vision_normals.png"), vision.normal_map)
     if vision.albedo is not None:

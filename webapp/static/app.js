@@ -40,8 +40,23 @@ function gradeColor(grade) {
   return "var(--bad)";
 }
 
+// Formats a scanner produces. A scan needs neither of the things this
+// function does — it has no EXIF orientation to correct, and downscaling it
+// is the opposite of what the pipeline wants — so it is handed through
+// untouched. Left alone, a PNG scan was quietly resampled to 3000px and
+// re-encoded as JPEG before upload: the ringing at the border/panel boundary
+// that the capture protocol explicitly warns against, applied by us.
+// (TIFF escaped only by accident, because createImageBitmap can't decode it.)
+const LOSSLESS_CAPTURE = /^image\/(png|tiff)$/i;
+const LOSSLESS_EXTENSION = /\.(png|tiff?)$/i;
+
+function isScannerCapture(file) {
+  return LOSSLESS_CAPTURE.test(file.type || "") || LOSSLESS_EXTENSION.test(file.name || "");
+}
+
 // ---- client-side image prep: EXIF orientation fix + downscale ----
 async function processImageFile(file) {
+  if (isScannerCapture(file)) return file;
   try {
     const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
     const maxEdge = 3000;

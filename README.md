@@ -79,6 +79,20 @@ This needs **absolute scale**, so it only runs on a capture whose scale is known
 flatbed scan with `--dpi` passed. A phone photo has no scale (the distance to the
 card is unknown), so the attribute reports as unmeasurable rather than guessing.
 
+Every scan of the front is an independent measurement, and where a rotation set
+exists all of them are used: the **median** is the figure and the **spread** is
+reported beside it. This is not caution for its own sake. Measured on a real flatbed
+the same card came out 2.9% different — 1.8mm on a 63mm card — depending only on
+whether it was lying portrait or landscape on the glass, against a tolerance of
+0.75mm. Resting the verdict on whichever scan happened to be the flat capture made
+one card read "2.13mm miscut" in one run and "within tolerance" in the next.
+
+When the spread is wider than the tolerance being applied, **no miscut verdict is
+given at all** — `within_tolerance` is None rather than True or False. A measurement
+that disagrees with itself by more than the thing it's being judged against cannot
+settle the question, and saying so is the honest answer. "Can't tell" is also not a
+defect, so it produces no DING.
+
 ### Stage 1.6 — Card Vision (`pipeline/cardvision.py`)
 A grayscale render of the card's *physical relief* with print stripped out —
 scratches, dents, creases and edge lifting are shape; artwork is not. The report
@@ -95,9 +109,31 @@ warp has already registered them to each other (an ECC pass cleans up the residu
 sub-pixel error, which matters — a two-pixel misalignment turns every print edge
 into a fake ridge in the normal map).
 
-Scans go in **rotation order**, the card turned a further 90° clockwise on the glass
-each time (`--rotation ccw` if you turn it the other way). `--lamp-azimuth` states
-where the scanner's lamp lights from in the first scan's card frame.
+Scans go in any order, turned either way. Each scan's rotation is **measured from
+the image**, not declared: orientation from the detected quad, then upright versus
+upside-down by correlating against the flat capture — the one thing geometry can't
+settle, since both are portrait. The measured rotation gives the light azimuth
+directly, because a card turned clockwise by θ moves the lamp clockwise by θ in the
+card's frame, and θ is exactly the counter-clockwise rotation needed to stand that
+scan upright.
+
+It is derived rather than declared because declaring it fails silently. File order
+and "which way did I turn it" are both easy to get wrong, and a wrong one doesn't
+error — it solves every normal against the wrong light and produces a plausible
+render of a badly damaged card. `--rotation` survives as the fallback for a scan the
+correlation can't resolve, and `--lamp-azimuth` states where the lamp lights from.
+
+The four warps are **registered to each other** before the solve, and this matters
+more than it sounds: a two-pixel shift turns every high-contrast print edge into a
+fake ridge. The fit is affine, not rigid — measured across one real set the detector
+found the same card at widths spanning 4.1%, which rotation-and-translation cannot
+express — matched on high-pass features so it doesn't chase the shading the solve
+exists to measure, and seeded globally (phase correlation plus a coarse scale
+search) because ECC's own capture range is about ten pixels and the offsets are
+larger than that. A fit outside plausible bounds is declined rather than applied.
+
+The normalised warps are kept with the report (`<side>_rotation_<k>.png`), so the
+solve can be re-run without the card going back on the glass.
 
 **Single-image approximation** (the fallback, and what the phone flow gets). One
 ordinary capture, high-pass filtered to drop the low-frequency albedo, then
@@ -107,9 +143,27 @@ separate fine print detail from real geometry, and the report labels which of th
 two methods produced what you're looking at, because that difference changes how you
 read a mark.
 
-Both paths soft-threshold at the measured noise floor (MAD-estimated) before
-autoscaling. Without that, a clean card renders as its own sensor noise stretched to
-full contrast, which reads as a surface covered in defects.
+Both paths soft-threshold at the measured noise floor before autoscaling. Without
+that, a clean card renders as its own noise stretched to full contrast, which reads
+as a surface covered in defects.
+
+The floor is read from the **flattest tenth of the card**, tile by tile, not from the
+median of the whole thing. "A card is mostly flat" is only true if you don't count
+the print: measured on a real scan the whole-card estimate put the floor at 0.222
+while the quietest tiles sat at 0.109, and a scratch six grey levels deep is 0.024 —
+so the threshold was measuring printed detail and erasing everything beneath it.
+Moving to the tiled estimate multiplied the rendered signal by 5× at 25 grey levels
+of depth and 14× at 12.
+
+Note what photometric stereo does *not* remove. It removes albedo — colour,
+brightness, foil shimmer — so a dark colour can no longer be mistaken for a dent. It
+does not remove the physical topography of the ink, because printed ink genuinely
+has thickness. Print shows up in these renders, correctly, as relief.
+
+Rendering and measurement are separate. `relief` carries the configured
+`relief_gain` and is a picture; `measurement_relief` is the same solve at unit gain
+and is what gets measured. They were the same image until turning the gain up for
+looks doubled a card's measured defect area and cost it a surface grade.
 
 #### Does your scanner even light off-axis?
 
@@ -145,6 +199,40 @@ measure, and a too-dim or blurry capture can hide a real one. The overall grade 
 uses the measurable side(s), or excludes centering entirely. Before this check, a
 real full-art promo produced a confident-looking "89/11 grade 3" from pure noise —
 which also collapsed the Stage 3 crop sizes to meaningless 12×12 patches.
+
+#### Measuring at the worst point, and placing it by hand
+
+PSA grades "the percent of difference at the most off-center part of the card" — a
+point, not an average. Each side is sampled at five bands along its length and the
+worst sample counts, with low-confidence samples excluded so noise can't win the
+vote. The bigger effect turned out to be on *confidence*: a shorter band contains
+less of a slanted border's slant, so the Canny peak stays sharp. On a card whose
+border wanders 20px down its side, peak confidence went 0.17 (one band, refused) →
+0.23 (three, refused) → 0.39 (five, measured).
+
+The detector has a third failure mode that no confidence gate catches: finding *an*
+edge, confidently enough to pass, that isn't the border. Modern cards stack an
+artwork boundary, an inner frame band and a thin rule within a few millimetres. So
+the boundaries can be **placed by hand** — eight lines over a zoomable full-screen
+view of the warp, a card edge and a border boundary per side, with a loupe. A
+hand-placed boundary is always measurable: the confidence score describes how sure
+the *detector* was, and once a person has said where the edge is that question is
+moot. Saved corrections rewrite the stored report and re-run corners and edges with
+them, since those crops are sized from the border widths.
+
+#### Tolerance tables
+
+PSA's are transcribed from the published standards, including the **5% front leeway**
+for cards grading 7 or better ("A 5% leeway is given to the front centering minimum
+standards"), and the back tolerance that stays at 90/10 from Mint 9 all the way down —
+only Gem Mint 10 tightens, to 75/25. Backs are cut far less precisely than fronts and
+nobody looks at them, so the leniency is real; assuming it tightened progressively,
+as the front does, graded an 88/12 back as a 7 instead of a 9.
+
+Every other service's table (BGS, CGC, SGC, TAG, ACE) is reported alongside for
+reference, each carrying a note of where it came from — all but PSA's are
+third-party transcriptions rather than primary sources, which is exactly how the
+back tolerances were wrong here before.
 
 ### Stage 3 — Corners & edges (`pipeline/corners_edges.py`)
 Crops the four corners and four edge strips, and runs a filter stack (CLAHE contrast

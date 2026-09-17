@@ -38,7 +38,9 @@ IMAGE_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,64}$")
 
 # Full-scale warps: stored, but served by URL rather than inlined, because
 # they are tens of megabytes each and only wanted when someone zooms.
-DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"})
+DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"}) | frozenset(
+    f"{side}_rotation_{index}" for side in ("front", "back") for index in range(6)
+)
 
 
 @dataclass

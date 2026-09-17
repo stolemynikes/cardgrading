@@ -142,3 +142,51 @@ class TestWithRotationScans:
         )
         assert report["card_vision"]["front"]["method"] == "single_image"
         assert "at least 3" in report["card_vision"]["front"]["fallback_reason"]
+
+
+class TestRotationScansAreKept:
+    """The four normalised warps are the only inputs the photometric solve
+    has. Discarding them meant every change to the solve cost a rescan — four
+    times over one evening, each one twenty minutes of the card going back on
+    the glass."""
+
+    @pytest.fixture
+    def photometric(self, tmp_path):
+        return [_scan(tmp_path, f"rot{i}.png", ccw_on_glass=-90 * i) for i in range(4)]
+
+    def test_each_scan_is_written_alongside_the_report(self, capture, photometric):
+        out = capture["out"]
+        grade_card(
+            capture["front"], capture["back"], THRESHOLDS, out, verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        for index in range(4):
+            assert (out / f"front_rotation_{index}.png").exists(), f"rotation {index} not kept"
+
+    def test_they_are_the_normalised_warps_not_the_raw_scans(self, capture, photometric):
+        """Normalised, so a re-solve starts where the last one did rather than
+        redoing detection and orientation from scratch."""
+        out = capture["out"]
+        grade_card(
+            capture["front"], capture["back"], THRESHOLDS, out, verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        kept = cv2.imread(str(out / "front_rotation_0.png"))
+        canonical = (THRESHOLDS["capture"]["canonical_height_px"], THRESHOLDS["capture"]["canonical_width_px"])
+        assert kept.shape[:2] == canonical
+
+    def test_a_side_with_no_rotation_scans_writes_none(self, capture, photometric):
+        out = capture["out"]
+        grade_card(
+            capture["front"], capture["back"], THRESHOLDS, out, verbose=False,
+            dpi=DPI, photometric_paths=(photometric, None),
+        )
+        assert not (out / "back_rotation_0.png").exists()
+
+    def test_they_are_served_by_url_not_inlined(self):
+        """Six warps a side at 6MB each has no business in a report response."""
+        from webapp import jobs, store
+
+        for index in range(4):
+            assert f"front_rotation_{index}" in jobs.DETAIL_IMAGE_KEYS
+            assert f"front_rotation_{index}" in store.DETAIL_IMAGE_KEYS

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from grade import grade_card
+from grade import MAX_PHOTOMETRIC_SCANS_KEPT as MAX_PHOTOMETRIC_SCANS
 from webapp import store
 
 MAX_CONCURRENT_JOBS = 2
@@ -138,6 +139,13 @@ def _image_paths(output_dir: Path, has_surface: bool) -> dict[str, Path]:
         "front_card_vision_normals": output_dir / "front_card_vision_normals.png",
         "back_card_vision_normals": output_dir / "back_card_vision_normals.png",
     }
+    # The normalised rotation scans behind a photometric solve. Stored so it
+    # can be re-run without the card going back on the glass; never inlined,
+    # for the same reason the detail warps aren't.
+    for side in ("front", "back"):
+        for index in range(MAX_PHOTOMETRIC_SCANS):
+            candidates[f"{side}_rotation_{index}"] = output_dir / f"{side}_rotation_{index}.png"
+
     for side in ("front", "back"):
         for region in (
             "corner_top_left",
@@ -162,7 +170,9 @@ def _image_paths(output_dir: Path, has_surface: bool) -> dict[str, Path]:
 # Tens of megabytes each. They're fetched by URL, on demand, when someone
 # actually zooms — inlining them would put the whole lot in every report
 # response whether or not anyone looks.
-DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"})
+DETAIL_IMAGE_KEYS = frozenset({"front_detail", "back_detail"}) | frozenset(
+    f"{side}_rotation_{index}" for side in ("front", "back") for index in range(MAX_PHOTOMETRIC_SCANS)
+)
 
 
 def _collect_images(output_dir: Path, has_surface: bool) -> dict[str, str]:
