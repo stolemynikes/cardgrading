@@ -1444,3 +1444,8 @@ body.adjust-fullscreen-open { overflow: hidden; }
   white-space: nowrap;
 }
 .ding-map-side .viewer-side-label { display: block; margin-top: var(--space-2); }
+
+/* Surface defects, worst first: what capped the grade and where to look for it. */
+.defect-list { list-style: none; margin: var(--space-2) 0 0; padding: 0; font-size: 0.72rem; }
+.defect-list li { padding: var(--space-1) 0; border-top: 1px solid var(--border); font-family: var(--mono, ui-monospace, monospace); }
+.defect-kind { font-weight: 600; text-transform: capitalize; }

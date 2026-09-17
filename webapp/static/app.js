@@ -1931,17 +1931,46 @@ function surfaceSideHTML(sideKey, label, sideData) {
     ? `<span class="grade-pill" style="color:${gradeColor(sideData.grade)}">grade ${sideData.grade}</span>`
     : `<span class="method-chip">not graded</span>`;
 
+  // What set the grade, and the marks behind it. "surface 4" is not
+  // something anyone can check; "a 2.7mm crease at the bottom-left corner
+  // caps this at 4" is — and it tells you where to look on the card.
+  const kinds = sideData.defect_kinds || {};
+  const kindSummary = Object.keys(kinds).length
+    ? `<div class="axis-row">
+         <span class="axis-label">found</span>
+         <span class="mono">${Object.entries(kinds).map(([k, n]) => `${n}&times; ${escapeHtml(k)}`).join(", ")}</span>
+       </div>`
+    : "";
+  const limit =
+    graded && sideData.limited_by
+      ? `<div class="axis-row">
+           <span class="axis-label">limited by</span>
+           <span class="mono">${escapeHtml(sideData.limited_by)}</span>
+         </div>`
+      : "";
+  const worst = (sideData.defects || []).filter((d) => d.grade_cap < 10).slice(0, 4);
+  const worstList = worst.length
+    ? `<ul class="defect-list">${worst
+        .map(
+          (d) =>
+            `<li><span class="defect-kind">${escapeHtml(d.kind)}</span>
+               ${d.length_mm}&times;${d.width_mm}mm at ${d.centre_mm[0]}, ${d.centre_mm[1]}mm
+               <span class="muted">caps at ${d.grade_cap}</span></li>`
+        )
+        .join("")}</ul>`
+    : "";
+
   return `<div class="surface-card">
     <div class="centering-card-header">${label} ${gradePill}</div>
+    ${limit}
+    ${kindSummary}
     <div class="axis-row">
       <span class="axis-label">defect area</span><span class="mono">${sideData.defect_area_pct.toFixed(3)}%</span>
     </div>
     <div class="axis-row">
       <span class="axis-label">defects</span><span class="mono">${sideData.defect_count}</span>
     </div>
-    <div class="axis-row">
-      <span class="axis-label">longest</span><span class="mono">${sideData.longest_defect_px}px</span>
-    </div>
+    ${worstList}
     <div class="muted cardvision-note">${escapeHtml(sideData.note || "")}</div>
   </div>`;
 }

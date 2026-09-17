@@ -134,19 +134,20 @@ def surface_grade_for_side(vision, thresholds: dict) -> surface.SurfaceGrade:
     mistaken for damage. The single-capture Card Vision approximation is
     measured and shown but never graded: print demonstrably leaks into it.
     """
-    # measurement_relief, not relief: the displayed render's gain is a viewing
-    # preference, and a viewing preference must not move a measurement.
-    if vision is not None and vision.method == "photometric_stereo":
-        measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
-        area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
-        return surface.grade_surface(area, count, longest, "photometric_relief", thresholds)
+    # measurement_relief, not relief: the displayed render's gain and its
+    # autoscale are viewing preferences, and a viewing preference must not
+    # move a measurement.
+    if vision is None:
+        return surface.grade_surface(0.0, 0, 0, "single_image_relief", thresholds)
 
-    if vision is not None:
-        measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
-        area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
-        return surface.grade_surface(area, count, longest, "single_image_relief", thresholds)
-
-    return surface.grade_surface(0.0, 0, 0, "single_image_relief", thresholds)
+    measured = vision.measurement_relief if vision.measurement_relief is not None else vision.relief
+    area, count, longest, _ = surface.relief_defect_stats(measured, thresholds["surface"])
+    source = "photometric_relief" if vision.method == "photometric_stereo" else "single_image_relief"
+    # Classified on both paths: the single-image render isn't trustworthy
+    # enough to grade, but naming what it found is still worth showing.
+    px_per_mm = thresholds["capture"]["canonical_width_px"] / dimensions.NOMINAL_WIDTH_MM
+    defects = surface.classify_defects(measured, thresholds["surface"], px_per_mm)
+    return surface.grade_surface(area, count, longest, source, thresholds, defects=defects)
 
 
 # The most rotation scans a set can hold, and so the most warps kept with a

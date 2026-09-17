@@ -121,18 +121,48 @@ function assert(cond, message) {
   const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
   const report = JSON.parse(JSON.stringify(data.report));
   report.surface = {
-    front: { grade: 7, defect_area_pct: 0.799, defect_count: 63, longest_defect_px: 957,
-             source: "photometric_relief", note: "measured from solved surface normals" },
+    front: { grade: 4, defect_area_pct: 0.799, defect_count: 63, longest_defect_px: 957,
+             source: "photometric_relief", note: "measured from solved surface normals",
+             limited_by: "crease", defect_kinds: { crease: 1, scratch: 9 },
+             defects: [
+               { kind: "crease", length_mm: 2.7, width_mm: 1.35, depth: 75.1, area_px: 604,
+                 centre_mm: [1.2, 87.4], grade_cap: 4 },
+               { kind: "scratch", length_mm: 9.9, width_mm: 0.24, depth: 32.7, area_px: 770,
+                 centre_mm: [29.1, 57.6], grade_cap: 9 },
+             ] },
     back: { grade: 6, defect_area_pct: 1.4, defect_count: 5, longest_defect_px: 300,
-            source: "photometric_relief", note: "measured from solved surface normals" },
+            source: "photometric_relief", note: "measured from solved surface normals",
+            limited_by: "overall surface wear", defect_kinds: {}, defects: [] },
   };
   dom.window.handleReport(report, data.images);
   const content = dom.window.document.getElementById("report-content").innerHTML;
-  assert(content.includes("grade 7"), "measured surface grade rendered");
+  assert(content.includes("grade 4"), "measured surface grade rendered");
   assert(content.includes("0.799%"), "defect area shown to the measured precision");
-  assert(content.includes("957px"), "longest defect shown");
   assert(content.includes("grade 6"), "the weaker side is rendered too");
   assert(content.includes("measured from solved surface normals"), "the signal's provenance is stated");
+  // What capped the grade, and where on the card to look for it — a bare
+  // "surface 4" is not something anyone can check.
+  assert(content.includes("limited by"), "the report says what set the grade");
+  assert(content.includes("crease"), "and names the defect kind that set it");
+  assert(content.includes("87.4mm") || content.includes("87.4"), "with the position on the card");
+  assert(content.includes("caps at 4"), "and the ceiling that defect carries");
+}
+
+// --- Test 1e2: a report saved before defect classification existed has no
+// defects, no kinds and no limited_by, and must still render.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.surface = {
+    front: { grade: 7, defect_area_pct: 0.799, defect_count: 63, longest_defect_px: 957,
+             source: "photometric_relief", note: "measured from solved surface normals" },
+    back: null,
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("grade 7"), "an older surface report still renders its grade");
+  assert(!content.includes("limited by"), "and claims no limit it never recorded");
 }
 
 // --- Test 1f: the single-capture approximation is measured and shown but

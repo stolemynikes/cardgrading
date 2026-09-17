@@ -278,8 +278,49 @@ Sharing one autoscaled render between the two is what made an undamaged card gra
 **surface 3** while the same card — creased, scratched twice and whitened along two
 edges — graded **6**. Every number was relative to that card's own worst feature, so
 the damage inflated the normaliser (2.55x) and scaled its own ink down. Adding damage
-to a card improved its score. With both fixes the pair reads **10 clean against 9
-damaged**; `tests/test_surface_measures_damage.py` holds it there.
+to a card improved its score.
+
+#### Grading by what the defect is, not how much of it there is
+
+Area is not a grading standard. No service grades by coverage, because a crease and a
+scuff of the same area are several grades apart everywhere. So every mark is measured
+and named from its shape — a crease is a fold in stock and so has width, a scratch is
+the track of something dragged and so is narrow and many times longer than it is wide
+— and each kind carries the grade ceiling the published rubrics give it:
+
+| mark | shape | ceiling | source |
+|---|---|---|---|
+| light scratch | narrow, shallow | 9–10 | TAG "does not penetrate the gloss" |
+| scratch through the gloss | narrow, deeper | 8 | TAG 8.5 |
+| deep gouge | narrow, deepest | 5 | PSA "deep scratches … cap at 5–6" |
+| dent | wide, deep, compact | 7 | TAG 7.5 |
+| wrinkle | wide, shallow | 5 | TAG 5 — stock deformed, not broken |
+| **crease** | wide, deep, elongated | **4 → 1 by span** | TAG 4.5; PSA: full crease "usually an automatic 1" |
+
+The worst ceiling on the card sets the grade — real graders do not average defects —
+and the area band remains underneath as the floor, which is what catches a card that
+is covered in marks too small to name. Grades are integers on the PSA scale, so TAG's
+half grades round **down**: this tool exists to decide whether a card is worth
+submitting, and the expensive error is telling someone a creased card will come back
+a 9.
+
+With all of it, the validation pair reads **9 clean against 4 damaged**, the damaged
+card limited by the crease at its bottom-left corner — where the crease actually is.
+`tests/test_surface_measures_damage.py` holds the pair; `tests/test_surface_rubric.py`
+holds the ladder against synthetic marks of known geometry.
+
+Two things this does not yet do, both measured:
+
+- **Defects within 1.5mm of the card edge are unreliable.** On the clean card, which
+  has no damage at all, defect density runs 100x higher inside that band than outside
+  it (0.144% against 0.001%) — it is perspective-warp seam error, and it is what holds
+  an undamaged card at 9 instead of 10. The margin isn't widened because real creases
+  and whitening happen at exactly the card's edges, so excluding the band would hide
+  the defect that should cap the grade. Edge damage belongs to corners/edges.
+- **A short crease and a dent are hard to separate**, and that is a three-grade
+  difference. They differ only in elongation (1.96 against 1.24 on the one real card
+  measured). The honest distinction is whether the stock is broken, which needs the
+  back of the card to confirm.
 
 ### Stage 4.5 — Card identification (`llm/vision.py`)
 The only model call left in the pipeline, and it never touches a grade. It answers
