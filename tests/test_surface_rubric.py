@@ -53,11 +53,43 @@ def _classify(marks) -> list[surface.Defect]:
     return surface.classify_defects(_card(marks), CFG, PX_PER_MM)
 
 
-def _grade(marks) -> surface.SurfaceGrade:
+def _grade(marks, grader: str | None = None) -> surface.SurfaceGrade:
     relief = _card(marks)
     area, count, longest, _ = surface.relief_defect_stats(relief, CFG)
     defects = surface.classify_defects(relief, CFG, PX_PER_MM)
-    return surface.grade_surface(area, count, longest, "photometric_relief", THRESHOLDS, defects=defects)
+    return surface.grade_surface(
+        area, count, longest, "photometric_relief", THRESHOLDS, defects=defects, grader=grader
+    )
+
+
+def _compare(marks) -> dict:
+    relief = _card(marks)
+    area, count, longest, _ = surface.relief_defect_stats(relief, CFG)
+    defects = surface.classify_defects(relief, CFG, PX_PER_MM)
+    return surface.compare_graders(area, count, longest, "photometric_relief", THRESHOLDS, defects)
+
+
+# One mark per row, and what each published standard says it costs.
+#
+#   PSA   hairline scratches cap at 9, visible ones at 7-8, deep ones that
+#         gouge the print layer at 5-6, and a light crease at 5-6. A crease
+#         running the full width is "usually an automatic 1".
+#   TAG   a light scratch not penetrating the gloss still allows 10, one that
+#         penetrates caps at 8.5, a minor dent 7.5, a wrinkle 5, a minor
+#         crease 4.5, half the card 4, three-quarters 3, full length 2.
+#   CGC   a light surface scratch is allowed at 9.5; "noticeable surface
+#         flaws ... scuffing, scratches or one light crease" is already 4.5;
+#         one moderate crease is 3; heavier creasing travelling edge to edge
+#         is 2; severe creasing that breaks the surface is 1.
+#
+# Half grades round down throughout: the expensive error for a tool that
+# decides whether to pay for a submission is optimism.
+LIGHT_SCRATCH = (6.0, 0.2, 32, (30, 44), 0)
+GLOSS_SCRATCH = (6.0, 0.2, 55, (30, 44), 0)
+DEEP_GOUGE = (6.0, 0.2, 80, (30, 44), 0)
+DENT = (1.5, 1.2, 80, (30, 44), 0)
+WRINKLE = (6.0, 1.4, 30, (30, 44), 0)
+MINOR_CREASE = (6.0, 1.4, 80, (30, 44), 0)
 
 
 class TestWhatTheMarkIs:
@@ -92,46 +124,64 @@ class TestWhatTheMarkIs:
 
 
 class TestTheCeilings:
-    def test_a_light_scratch_still_allows_a_high_grade(self):
-        """TAG 9/10: a scratch that doesn't penetrate the gloss."""
-        assert _grade([(6.0, 0.2, 32, (30, 44), 0)]).grade >= 9
+    """Each standard's own published numbers, not one blended ladder."""
 
-    def test_a_gloss_penetrating_scratch_caps_at_eight(self):
-        """TAG 8.5, rounded down to an integer PSA-style scale."""
-        assert _grade([(6.0, 0.2, 55, (30, 44), 0)]).grade == 8
+    @pytest.mark.parametrize("grader,expected", [("psa", 9), ("tag", 10), ("cgc", 9)])
+    def test_a_light_scratch(self, grader, expected):
+        assert _grade([LIGHT_SCRATCH], grader).grade == expected
 
-    def test_a_deep_gouge_caps_at_five(self):
-        """PSA: deep scratches that gouge into the print layer cap at 5-6."""
-        assert _grade([(6.0, 0.2, 80, (30, 44), 0)]).grade == 5
+    @pytest.mark.parametrize("grader,expected", [("psa", 7), ("tag", 8), ("cgc", 8)])
+    def test_a_scratch_through_the_gloss(self, grader, expected):
+        assert _grade([GLOSS_SCRATCH], grader).grade == expected
 
-    def test_a_dent_caps_at_seven(self):
-        assert _grade([(1.5, 1.2, 80, (30, 44), 0)]).grade == 7
+    @pytest.mark.parametrize("grader,expected", [("psa", 5), ("tag", 5), ("cgc", 4)])
+    def test_a_deep_gouge(self, grader, expected):
+        """The widest disagreement between the three on a single mark."""
+        assert _grade([DEEP_GOUGE], grader).grade == expected
 
-    def test_a_wrinkle_caps_at_five(self):
-        assert _grade([(6.0, 1.4, 30, (30, 44), 0)]).grade == 5
+    @pytest.mark.parametrize("grader,expected", [("psa", 7), ("tag", 7), ("cgc", 6)])
+    def test_a_dent(self, grader, expected):
+        assert _grade([DENT], grader).grade == expected
 
-    def test_a_minor_crease_caps_at_four(self):
-        """TAG 4.5 — 'a minor crease is visible, breaking the stock'. PSA
-        puts a light crease at 5-6; 4 is the more conservative of the two,
-        and the expensive error here is telling someone a creased card will
-        come back a 9."""
-        assert _grade([(6.0, 1.4, 80, (30, 44), 0)]).grade == 4
+    @pytest.mark.parametrize("grader,expected", [("psa", 6), ("tag", 5), ("cgc", 5)])
+    def test_a_wrinkle(self, grader, expected):
+        assert _grade([WRINKLE], grader).grade == expected
+
+    @pytest.mark.parametrize("grader,expected", [("psa", 5), ("tag", 4), ("cgc", 4)])
+    def test_a_minor_crease(self, grader, expected):
+        assert _grade([MINOR_CREASE], grader).grade == expected
 
     @pytest.mark.parametrize(
-        "span_mm,expected",
-        [(40.0, 4), (50.0, 3), (70.0, 2), (86.0, 1)],
+        "span_mm,psa,tag,cgc",
+        [
+            (30.0, 5, 4, 3),   # about a third of the card
+            (50.0, 3, 4, 2),   # over half
+            (70.0, 2, 3, 2),   # about three-quarters
+            (86.0, 1, 2, 2),   # edge to edge
+        ],
     )
-    def test_a_longer_crease_caps_lower(self, span_mm, expected):
-        """TAG's ladder by span: about half the card at 4, three-quarters at
-        3, full length at 2. PSA calls a full crease 'usually an automatic
-        1'."""
-        assert _grade([(span_mm, 1.4, 80, (31, 44), 90)]).grade == expected
+    def test_a_crease_costs_more_the_further_it_runs(self, span_mm, psa, tag, cgc):
+        """All three ladder creases by span, and all three disagree on it.
+        PSA is alone in putting a full-length crease at 1."""
+        marks = [(span_mm, 1.4, 80, (31, 44), 90)]
+        assert _grade(marks, "psa").grade == psa
+        assert _grade(marks, "tag").grade == tag
+        assert _grade(marks, "cgc").grade == cgc
+
+    def test_a_second_crease_costs_a_grade_where_the_standard_counts_them(self):
+        """CGC separates "one light crease" (4.5) from "one or more light
+        creases" (4), and PSA's low grades are written as "several creases".
+        TAG's ladder is written by span alone, so it doesn't move."""
+        two = [(6.0, 1.4, 80, (18, 30), 0), (6.0, 1.4, 80, (44, 62), 0)]
+        assert _grade(two, "psa").grade == 4
+        assert _grade(two, "cgc").grade == 3
+        assert _grade(two, "tag").grade == _grade([MINOR_CREASE], "tag").grade
 
     def test_the_worst_defect_sets_the_grade(self):
         """A card carrying both a crease and a light scratch grades as the
         crease. Real graders do not average defects."""
-        graded = _grade([(6.0, 1.4, 80, (20, 30), 0), (5.0, 0.2, 32, (40, 60), 0)])
-        assert graded.grade == 4
+        graded = _grade([MINOR_CREASE, (5.0, 0.2, 32, (40, 60), 0)])
+        assert graded.grade == 5
         assert graded.limited_by == "crease"
 
     def test_a_clean_card_is_not_capped(self):
@@ -142,25 +192,67 @@ class TestTheCeilings:
     def test_heavy_scuffing_still_grades_on_area(self):
         """The area band is not replaced by the ladder — it is the floor. A
         card covered in marks too small to name individually still grades
-        badly, which is what 'surface wear' means."""
+        badly, which is what "surface wear" means."""
         rng = np.random.default_rng(0)
         marks = [(1.2, 0.6, 40, (float(rng.uniform(4, 59)), float(rng.uniform(4, 84))), 0) for _ in range(900)]
         graded = _grade(marks)
         assert graded.grade <= 5
         assert graded.limited_by == "overall surface wear"
 
+    def test_a_grade_never_falls_below_one(self):
+        many = [(86.0, 1.4, 80, (10 + 12 * i, 44), 90) for i in range(4)]
+        assert _grade(many, "psa").grade == 1
+        assert _grade(many, "cgc").grade >= 1
+
+
+class TestComparingTheStandards:
+    def test_every_configured_standard_is_reported(self):
+        compared = _compare([MINOR_CREASE])
+        assert set(compared) == {"psa", "tag", "cgc"}
+        for key, entry in compared.items():
+            assert entry["label"]
+            assert entry["source"], f"{key} must cite where its ladder came from"
+
+    def test_they_disagree_and_the_report_shows_it(self):
+        """The point of showing all three: one number was hiding a choice."""
+        compared = _compare([DEEP_GOUGE])
+        assert compared["psa"]["grade"] == 5
+        assert compared["cgc"]["grade"] == 4
+
+    def test_comparing_does_not_disturb_the_primary_grade(self):
+        """Each grader prices its own copy of the defects. Sharing them let
+        whichever grader ran last leave its ceilings behind on the list the
+        report then displayed."""
+        relief = _card([MINOR_CREASE])
+        area, count, longest, _ = surface.relief_defect_stats(relief, CFG)
+        defects = surface.classify_defects(relief, CFG, PX_PER_MM)
+        primary = surface.grade_surface(area, count, longest, "photometric_relief", THRESHOLDS, defects)
+        caps_before = [d.grade_cap for d in defects]
+        surface.compare_graders(area, count, longest, "photometric_relief", THRESHOLDS, defects)
+        assert [d.grade_cap for d in defects] == caps_before
+        assert primary.grade == 5
+
+    def test_the_primary_grader_is_named_on_the_grade(self):
+        """A surface grade without a standard attached is not a complete
+        statement when the standards differ by four grades."""
+        graded = _grade([DEEP_GOUGE])
+        assert graded.grader == "psa"
+        assert graded.to_dict()["grader"] == "psa"
+
 
 class TestTheReport:
     def test_the_defects_are_named_in_the_report(self):
         """'surface 4' is not an answer anyone can check. 'a 6mm crease at
         (30,44)mm caps this at 4' is."""
-        graded = _grade([(6.0, 1.4, 80, (30, 44), 0)])
+        graded = _grade([MINOR_CREASE])
         payload = graded.to_dict()
         assert payload["limited_by"] == "crease"
         assert payload["defect_kinds"]["crease"] == 1
         worst = payload["defects"][0]
         assert worst["kind"] == "crease"
-        assert worst["grade_cap"] == 4
+        # The ceiling shown is the primary grader's — PSA puts a light crease
+        # at 5-6 where TAG and CGC both put it at 4.5.
+        assert worst["grade_cap"] == 5
         assert worst["centre_mm"] == pytest.approx([30, 44], abs=1.5)
 
     def test_the_list_is_capped_so_a_scuffed_card_does_not_flood_it(self):
@@ -169,7 +261,7 @@ class TestTheReport:
         assert len(_grade(marks).to_dict()["defects"]) <= 12
 
     def test_an_ungraded_source_names_no_limit(self):
-        relief = _card([(6.0, 1.4, 80, (30, 44), 0)])
+        relief = _card([MINOR_CREASE])
         area, count, longest, _ = surface.relief_defect_stats(relief, CFG)
         graded = surface.grade_surface(area, count, longest, "single_image_relief", THRESHOLDS,
                                        defects=surface.classify_defects(relief, CFG, PX_PER_MM))

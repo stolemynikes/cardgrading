@@ -86,6 +86,8 @@ def assemble_grade(
     surface_grade: int | None,
     thresholds: dict,
     dimensions_within_tolerance: bool | None = None,
+    defect_grade_cap: int | None = None,
+    defect_cap_reason: str | None = None,
 ) -> GradeEstimate:
     fitted = thresholds.get("scoring", {}).get("fitted_weights")
 
@@ -122,6 +124,19 @@ def assemble_grade(
             return GradeEstimate(centering_grade, corners_edges_grade, surface_grade, 0.0, 0, MIN_SCORE,
                                  "nothing measurable in this capture — no grade can be estimated")
         overall = _heuristic_overall(sub_grades)
+
+    # A physical defect caps the whole card, not just the sub-grade it was
+    # found in. Every published standard describes creases this way — PSA:
+    # "even a light crease usually caps you at PSA 6 or below, no matter how
+    # perfect everything else looks" — and the heuristic on its own does not
+    # do that: it lets the overall sit a point above the worst sub-grade, so a
+    # card creased end to end came out a 2 where PSA calls a full crease
+    # "usually an automatic 1".
+    if defect_grade_cap is not None and overall > defect_grade_cap:
+        overall = float(defect_grade_cap)
+        note += f" · capped at {defect_grade_cap:g}"
+        if defect_cap_reason:
+            note += f" — {defect_cap_reason} caps the card regardless of its other attributes"
 
     # A measurably miscut or trimmed card caps out regardless of how clean
     # its surface and corners are — graders treat wrong dimensions as a

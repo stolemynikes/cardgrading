@@ -165,6 +165,51 @@ function assert(cond, message) {
   assert(!content.includes("limited by"), "and claims no limit it never recorded");
 }
 
+// --- Test 1e3: the three published rubrics disagree, and the report shows
+// all three rather than hiding the choice behind one number.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  const byGrader = {
+    psa: { label: "PSA", source: "https://www.psacard.com/gradingstandards", grade: 5, limited_by: "crease" },
+    tag: { label: "TAG", source: "https://taggrading.com/pages/rubric", grade: 4, limited_by: "crease" },
+    cgc: { label: "CGC", source: "https://www.cgccards.com/card-grading/grading-scale/", grade: 4, limited_by: "crease" },
+  };
+  report.surface = {
+    front: { grade: 5, defect_area_pct: 0.15, defect_count: 19, longest_defect_px: 300,
+             source: "photometric_relief", note: "measured from solved surface normals",
+             grader: "psa", limited_by: "crease", defect_kinds: { crease: 1 },
+             defects: [{ kind: "crease", severity: "crease", length_mm: 2.7, width_mm: 1.35,
+                         depth: 75.1, area_px: 604, centre_mm: [1.2, 87.4], grade_cap: 5 }],
+             by_grader: byGrader },
+    back: { grade: 9, defect_area_pct: 0.03, defect_count: 2, longest_defect_px: 40,
+            source: "photometric_relief", note: "measured from solved surface normals",
+            grader: "psa", limited_by: "pit", defect_kinds: { pit: 2 }, defects: [],
+            by_grader: { psa: { label: "PSA", source: "x", grade: 9, limited_by: "pit" },
+                         tag: { label: "TAG", source: "y", grade: 9, limited_by: "pit" },
+                         cgc: { label: "CGC", source: "z", grade: 9, limited_by: "pit" } } },
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("every grading service"), "the surface comparison table is rendered");
+  for (const label of ["PSA", "TAG", "CGC"]) {
+    assert(content.includes(label), `${label} appears in the surface comparison`);
+  }
+  assert(content.includes("taggrading.com/pages/rubric"), "each rubric cites its published source");
+  assert(content.includes("cgccards.com"), "including CGC's");
+
+  // A report saved before per-grader surface grading has no by_grader and
+  // must render without the table rather than throwing.
+  const older = JSON.parse(JSON.stringify(report));
+  delete older.surface.front.by_grader;
+  delete older.surface.back.by_grader;
+  dom.window.handleReport(older, data.images);
+  const olderContent = dom.window.document.getElementById("report-content").innerHTML;
+  assert(olderContent.includes("grade 5"), "an older surface report still renders");
+  assert(!olderContent.includes("every grading service's rubric"), "and shows no comparison it never had");
+}
+
 // --- Test 1f: the single-capture approximation is measured and shown but
 // never graded, because print leaks into that signal.
 {

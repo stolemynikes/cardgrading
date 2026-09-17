@@ -665,7 +665,103 @@
         1300,
         6
       ]
-    ]
+    ],
+    "primary_grader": "psa",
+    "graders": {
+      "psa": {
+        "label": "PSA",
+        "source": "https://www.psacard.com/gradingstandards",
+        "ceilings": {
+          "scratch_light": 9,
+          "scratch_gloss": 7,
+          "scratch_deep": 5,
+          "dent": 7,
+          "wrinkle": 6,
+          "pit": 9
+        },
+        "crease_span_ceilings": [
+          [
+            0.95,
+            1
+          ],
+          [
+            0.75,
+            2
+          ],
+          [
+            0.5,
+            3
+          ],
+          [
+            0.0,
+            5
+          ]
+        ],
+        "extra_crease_penalty": 1
+      },
+      "tag": {
+        "label": "TAG",
+        "source": "https://taggrading.com/pages/rubric",
+        "ceilings": {
+          "scratch_light": 10,
+          "scratch_gloss": 8,
+          "scratch_deep": 5,
+          "dent": 7,
+          "wrinkle": 5,
+          "pit": 9
+        },
+        "crease_span_ceilings": [
+          [
+            0.95,
+            2
+          ],
+          [
+            0.75,
+            3
+          ],
+          [
+            0.5,
+            4
+          ],
+          [
+            0.0,
+            4
+          ]
+        ],
+        "extra_crease_penalty": 0
+      },
+      "cgc": {
+        "label": "CGC",
+        "source": "https://www.cgccards.com/card-grading/grading-scale/",
+        "ceilings": {
+          "scratch_light": 9,
+          "scratch_gloss": 8,
+          "scratch_deep": 4,
+          "dent": 6,
+          "wrinkle": 5,
+          "pit": 9
+        },
+        "crease_span_ceilings": [
+          [
+            0.95,
+            2
+          ],
+          [
+            0.5,
+            2
+          ],
+          [
+            0.25,
+            3
+          ],
+          [
+            0.0,
+            4
+          ]
+        ],
+        "extra_crease_penalty": 1
+      }
+    }
   },
   "card_vision": {
     "light_elevation_deg": 70.0,

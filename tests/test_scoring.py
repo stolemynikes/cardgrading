@@ -135,3 +135,49 @@ class TestDimensionsCap:
         unmeasured = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS, dimensions_within_tolerance=None)
         within = scoring.assemble_grade(10, 10, 10, self.THRESHOLDS, dimensions_within_tolerance=True)
         assert baseline.overall_grade == unmeasured.overall_grade == within.overall_grade
+
+
+class TestADefectCapsTheWholeCard:
+    """A crease is not a surface problem, it is a card problem.
+
+    Every published standard says so — PSA: "even a light crease usually caps
+    you at PSA 6 or below, no matter how perfect everything else looks." The
+    heuristic on its own cannot express that: it lets the overall grade sit a
+    point above the worst sub-grade, so a card creased end to end came out a
+    2 where PSA calls a full-width crease "usually an automatic 1".
+    """
+
+    def test_a_defect_ceiling_binds_the_overall_grade(self):
+        ge = scoring.assemble_grade(10, 10, 5, {}, defect_grade_cap=5, defect_cap_reason="a crease")
+        assert ge.overall_grade == pytest.approx(5.0)
+
+    def test_a_full_length_crease_reaches_one(self):
+        ge = scoring.assemble_grade(10, 10, 1, {}, defect_grade_cap=1, defect_cap_reason="a crease")
+        assert ge.overall_grade == pytest.approx(1.0)
+
+    def test_the_reason_is_stated(self):
+        ge = scoring.assemble_grade(10, 10, 4, {}, defect_grade_cap=4, defect_cap_reason="a crease")
+        assert "crease" in ge.note
+        assert "caps the card" in ge.note
+
+    def test_no_cap_leaves_the_heuristic_alone(self):
+        """Ordinary surface wear is not a named defect: the sub-grade already
+        says it, and capping on it twice would double-count."""
+        with_cap = scoring.assemble_grade(8, 8, 4, {}, defect_grade_cap=None)
+        assert with_cap.overall_grade > 4.0
+
+    def test_a_cap_above_the_estimate_changes_nothing(self):
+        plain = scoring.assemble_grade(9, 9, 9, {})
+        capped = scoring.assemble_grade(9, 9, 9, {}, defect_grade_cap=10, defect_cap_reason="a pit")
+        assert capped.overall_grade == pytest.approx(plain.overall_grade)
+        assert "caps the card" not in capped.note
+
+    def test_it_stacks_with_the_miscut_cap(self):
+        """Two independent caps, both of which bind."""
+        ge = scoring.assemble_grade(
+            10, 10, 5, {"dimensions": {"miscut_grade_cap": 8.0}},
+            dimensions_within_tolerance=False, defect_grade_cap=4, defect_cap_reason="a crease",
+        )
+        assert ge.overall_grade == pytest.approx(4.0)
+        assert "crease" in ge.note
+        assert "cut tolerance" in ge.note

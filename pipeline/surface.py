@@ -14,7 +14,7 @@ signal's provenance deciding how much weight it carries.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import cv2
 import numpy as np
@@ -65,6 +65,12 @@ class SurfaceGrade:
     # What actually set the grade: the defect kind that capped it, or the
     # area band when nothing capped it harder.
     limited_by: str | None = None
+    # Whose standard produced this grade. Recorded because the three published
+    # rubrics disagree by several grades on the same defect, so a surface
+    # grade without a grader attached is not a complete statement.
+    grader: str | None = None
+    # The same marks priced by every configured standard. Reference only.
+    by_grader: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -76,6 +82,8 @@ class SurfaceGrade:
             "source": self.source,
             "note": self.note,
             "limited_by": self.limited_by,
+            "grader": self.grader,
+            "by_grader": self.by_grader,
             # Worst first, and capped: a card can carry hundreds of pits and
             # the report has no use for a list that long.
             "defects": [d.to_dict() for d in sorted(self.defects, key=lambda d: d.grade_cap)[:12]],
@@ -187,19 +195,27 @@ DEEP_GOUGE_DEPTH = 70.0
 
 @dataclass
 class Defect:
-    """One measured mark on the card, with the shape that decides what it is."""
+    """One measured mark on the card, with the shape that decides what it is.
 
-    kind: str  # crease | scratch | dent | pit
+    Carries no grade of its own. What a mark costs depends on whose standard
+    is being applied, and the three published standards disagree by as much as
+    four grades on the same defect — a deep scratch is a 5 to PSA and a 4 to
+    CGC, a full-length crease is a 1 to PSA and a 2 to both TAG and CGC.
+    """
+
+    kind: str  # crease | wrinkle | scratch | dent | pit
+    severity: str  # the key a grader's ceiling table is indexed by
     length_mm: float
     width_mm: float
     depth: float
     area_px: int
     centre_mm: tuple[float, float]
-    grade_cap: int
+    grade_cap: int = 10  # filled in per grader by grade_surface
 
     def to_dict(self) -> dict:
         return {
             "kind": self.kind,
+            "severity": self.severity,
             "length_mm": round(self.length_mm, 2),
             "width_mm": round(self.width_mm, 2),
             "depth": round(self.depth, 1),
@@ -209,44 +225,50 @@ class Defect:
         }
 
 
-def _crease_cap(length_mm: float, card_length_mm: float) -> int:
-    """How far a crease runs decides how far it drops the grade.
+def _classify(length_mm: float, width_mm: float, elongation: float, depth: float) -> tuple[str, str]:
+    """What this mark is: its kind, and the severity key the rubrics ladder on.
 
-    TAG's ladder, in fractions of the card: a minor crease caps at 4.5 (4 on
-    an integer scale), about half the card at 4, three-quarters at 3, and
-    full-length at 2. PSA puts a full crease at 1, which is what the bottom
-    of this scale reflects.
+    Naming only. What each name costs is a question about a grading standard,
+    not about the card, and the three standards disagree — see GRADERS.
     """
-    span = length_mm / max(card_length_mm, 1e-6)
-    if span >= 0.95:
-        return 1
-    if span >= 0.75:
-        return 2
-    if span >= 0.5:
-        return 3
-    return 4
-
-
-def _classify(length_mm: float, width_mm: float, elongation: float, depth: float,
-              card_length_mm: float) -> tuple[str, int]:
-    """What this mark is, and the best grade a card carrying it can get."""
     if width_mm >= MIN_CREASE_WIDTH_MM and depth >= GLOSS_PENETRATION_DEPTH:
         if elongation >= MIN_CREASE_ELONGATION:
-            return "crease", _crease_cap(length_mm, card_length_mm)
-        return "dent", 7            # deep but not a fold — TAG 7.5
+            return "crease", "crease"
+        return "dent", "dent"       # deep but not a fold
     if width_mm >= MIN_CREASE_WIDTH_MM:
         # Wide but shallow: the stock is deformed without being broken, which
         # is what the rubrics call a wrinkle rather than a crease.
-        return "wrinkle", 5
+        return "wrinkle", "wrinkle"
     if elongation >= MIN_SCRATCH_ELONGATION and width_mm <= MAX_SCRATCH_WIDTH_MM:
         if depth >= DEEP_GOUGE_DEPTH:
-            return "scratch", 5     # cuts into the stock — PSA "deep scratch"
+            return "scratch", "scratch_deep"    # cuts into the stock
         if depth >= GLOSS_PENETRATION_DEPTH:
-            return "scratch", 8     # penetrates the gloss — TAG 8.5
-        return "scratch", 9         # sits in the gloss only — TAG 9/10
+            return "scratch", "scratch_gloss"   # penetrates the gloss
+        return "scratch", "scratch_light"       # sits in the gloss only
     if depth >= GLOSS_PENETRATION_DEPTH:
-        return "dent", 7            # compact and deep — TAG 7.5
-    return "pit", 9
+        return "dent", "dent"
+    return "pit", "pit"
+
+
+def crease_ceiling(span: float, ladder: list) -> int:
+    """The ceiling a crease of this span imposes, from a grader's own ladder.
+
+    `span` is the crease's length as a fraction of the card's long edge, which
+    is the unit all three standards describe creases in — "spanning about half
+    the card", "travelling across the surface from edge to edge".
+    """
+    for max_span, ceiling in sorted(ladder, key=lambda entry: -entry[0]):
+        if span >= max_span:
+            return int(ceiling)
+    return int(sorted(ladder, key=lambda entry: entry[0])[0][1])
+
+
+def ceiling_for(defect: "Defect", grader: dict, card_length_mm: float) -> int:
+    """The best grade this grader would give a card carrying this one mark."""
+    if defect.kind == "crease":
+        span = defect.length_mm / max(card_length_mm, 1e-6)
+        return crease_ceiling(span, grader.get("crease_span_ceilings") or [[0.0, 4]])
+    return int((grader.get("ceilings") or {}).get(defect.severity, 10))
 
 
 def classify_defects(relief: np.ndarray, cfg: dict, px_per_mm: float) -> list[Defect]:
@@ -261,7 +283,6 @@ def classify_defects(relief: np.ndarray, cfg: dict, px_per_mm: float) -> list[De
     _, mask = cv2.threshold(deviation, cfg["relief_defect_threshold"], 255, cv2.THRESH_BINARY)
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
 
-    card_length_mm = relief.shape[0] / px_per_mm
     min_area = cfg["min_defect_blob_area_px"]
     defects = []
     for i in range(1, count):
@@ -283,16 +304,16 @@ def classify_defects(relief: np.ndarray, cfg: dict, px_per_mm: float) -> list[De
         if length_mm < MIN_DEFECT_LENGTH_MM:
             continue
         depth = float(deviation[ys, xs].mean())
-        kind, cap = _classify(length_mm, width_mm, length_mm / width_mm, depth, card_length_mm)
+        kind, severity = _classify(length_mm, width_mm, length_mm / width_mm, depth)
         defects.append(
             Defect(
                 kind=kind,
+                severity=severity,
                 length_mm=length_mm,
                 width_mm=width_mm,
                 depth=depth,
                 area_px=int(stats[i, cv2.CC_STAT_AREA]),
                 centre_mm=(float(centroids[i][0]) / px_per_mm, float(centroids[i][1]) / px_per_mm),
-                grade_cap=cap,
             )
         )
     return defects
@@ -313,6 +334,8 @@ def grade_surface(
     source: str,
     thresholds: dict,
     defects: list | None = None,
+    grader: str | None = None,
+    card_length_mm: float | None = None,
 ) -> SurfaceGrade:
     """Turn measured defects into a surface sub-grade.
 
@@ -331,6 +354,9 @@ def grade_surface(
     cfg = thresholds["surface"]
     graded = source in GRADED_SOURCES
     defects = defects or []
+    grader_key = grader or cfg.get("primary_grader", "psa")
+    grader_cfg = (cfg.get("graders") or {}).get(grader_key, {})
+    card_length_mm = card_length_mm or _card_length_mm(thresholds)
 
     grade = None
     limited_by = None
@@ -339,18 +365,22 @@ def grade_surface(
         limited_by = "overall surface wear"
 
         if defects:
+            for defect in defects:
+                defect.grade_cap = ceiling_for(defect, grader_cfg, card_length_mm)
             worst = min(defects, key=lambda d: d.grade_cap)
-            if worst.grade_cap < grade:
-                grade = worst.grade_cap
+            ceiling = worst.grade_cap
+
+            # Several standards count as well as classify. CGC separates "one
+            # light crease" from "one or more light creases" by half a grade,
+            # and PSA's low grades are written in terms of "several creases".
+            creases = [d for d in defects if d.kind == "crease"]
+            if len(creases) > 1:
+                ceiling -= int(grader_cfg.get("extra_crease_penalty", 0))
+
+            ceiling = max(1, ceiling)
+            if ceiling < grade:
+                grade = ceiling
                 limited_by = worst.kind
-        else:
-            # No classification available (an older report, or a caller that
-            # only has summary statistics). Length is the one shape cue the
-            # summary carries.
-            for min_length, capped in cfg["scratch_length_caps"]:
-                if longest_defect_px >= min_length:
-                    grade = min(grade, int(capped))
-                    limited_by = "scratch length"
 
     return SurfaceGrade(
         grade=grade,
@@ -362,4 +392,49 @@ def grade_surface(
         note=SOURCE_NOTES.get(source, ""),
         defects=defects,
         limited_by=limited_by if graded else None,
+        grader=grader_key if graded else None,
     )
+
+
+def _card_length_mm(thresholds: dict) -> float:
+    capture = thresholds.get("capture", {})
+    width_px = capture.get("canonical_width_px", 1500)
+    height_px = capture.get("canonical_height_px", 2100)
+    from pipeline.dimensions import NOMINAL_WIDTH_MM
+
+    return height_px * (NOMINAL_WIDTH_MM / width_px)
+
+
+def compare_graders(
+    defect_area_pct: float,
+    defect_count: int,
+    longest_defect_px: int,
+    source: str,
+    thresholds: dict,
+    defects: list | None = None,
+) -> dict:
+    """What every configured standard would say about the same measured card.
+
+    The same marks, priced by three different published rubrics. They disagree
+    by up to four grades on one defect — a deep scratch is a 5 to PSA and a 4
+    to CGC; a full-length crease is a 1 to PSA and a 2 to both TAG and CGC —
+    so a single number was always hiding a choice. Reference only: the primary
+    grader still drives the card's grade, the same way PSA drives centering.
+    """
+    cfg = thresholds.get("surface", {})
+    graders = cfg.get("graders") or {}
+    out = {}
+    for key, grader_cfg in graders.items():
+        # Each grader prices its own copy: grade_surface writes the ceiling it
+        # applied back onto every defect, and they must not tread on each other.
+        copies = [replace(d) for d in (defects or [])]
+        result = grade_surface(
+            defect_area_pct, defect_count, longest_defect_px, source, thresholds, copies, grader=key
+        )
+        out[key] = {
+            "label": grader_cfg.get("label", key.upper()),
+            "source": grader_cfg.get("source"),
+            "grade": result.grade,
+            "limited_by": result.limited_by,
+        }
+    return out

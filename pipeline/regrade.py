@@ -27,6 +27,27 @@ def _surface_grade(report: dict) -> int | None:
     return min((side["grade"] for side in graded), default=None)
 
 
+def _defect_cap(report: dict) -> tuple[int | None, str | None]:
+    """The ceiling a named physical defect imposes on the whole card.
+
+    Mirrors grade.py. Re-derived here rather than carried on the report,
+    because rescore runs after a hand-placed centering edit and has to rebuild
+    the grade from the report's own sections — and dropping this silently
+    handed a creased card back its full grade the moment someone dragged a
+    centering line.
+    """
+    surface = report.get("surface") or {}
+    capped = [
+        (side["grade"], side.get("limited_by"))
+        for side in surface.values()
+        if isinstance(side, dict)
+        and side.get("grade") is not None
+        and side.get("limited_by")
+        and side["limited_by"] != "overall surface wear"
+    ]
+    return min(capped, default=(None, None))
+
+
 DEFAULT_BORDER_FRACTION = 0.04
 
 
@@ -114,12 +135,15 @@ def rescore(report: dict, thresholds: dict) -> dict:
         # just PSA's.
         centering["by_grader"] = centering_stage.compare_graders(centering, thresholds)
     corners_edges = report.get("corners_edges") or {}
+    defect_cap, defect_cap_reason = _defect_cap(report)
     estimate = scoring.assemble_grade(
         centering.get("overall_grade"),
         corners_edges.get("overall_grade"),
         _surface_grade(report),
         thresholds,
         dimensions_within_tolerance=(report.get("dimensions") or {}).get("within_tolerance"),
+        defect_grade_cap=defect_cap,
+        defect_cap_reason=f"a {defect_cap_reason}" if defect_cap_reason else None,
     )
     report["grade_estimate"] = estimate.to_dict()
 

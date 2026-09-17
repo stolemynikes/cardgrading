@@ -147,7 +147,12 @@ def surface_grade_for_side(vision, thresholds: dict) -> surface.SurfaceGrade:
     # enough to grade, but naming what it found is still worth showing.
     px_per_mm = thresholds["capture"]["canonical_width_px"] / dimensions.NOMINAL_WIDTH_MM
     defects = surface.classify_defects(measured, thresholds["surface"], px_per_mm)
-    return surface.grade_surface(area, count, longest, source, thresholds, defects=defects)
+    graded = surface.grade_surface(area, count, longest, source, thresholds, defects=defects)
+    # What every other published standard would say about the same marks.
+    # Reference only — the primary grader drives the card's grade, the same
+    # way PSA drives centering.
+    graded.by_grader = surface.compare_graders(area, count, longest, source, thresholds, defects)
+    return graded
 
 
 # The most rotation scans a set can hold, and so the most warps kept with a
@@ -677,10 +682,23 @@ def grade_card(
     graded = [sg for sg in surface_grades.values() if sg.grade is not None]
     surface_grade = min((sg.grade for sg in graded), default=None)
 
+    # A named physical defect caps the card itself, not just its surface
+    # sub-grade — which is how every published standard treats a crease.
+    # "overall surface wear" is not such a defect: that is the area band, and
+    # it is already what the sub-grade says.
+    capped = [
+        (sg.grade, sg.limited_by)
+        for sg in surface_grades.values()
+        if sg.grade is not None and sg.limited_by and sg.limited_by != "overall surface wear"
+    ]
+    defect_cap, defect_cap_reason = min(capped, default=(None, None))
+
     stage("scoring")
     grade_estimate = scoring.assemble_grade(
         result.overall_grade, ce_result.overall_grade, surface_grade, thresholds,
         dimensions_within_tolerance=front_dimensions.within_tolerance,
+        defect_grade_cap=defect_cap,
+        defect_cap_reason=f"a {defect_cap_reason}" if defect_cap_reason else None,
     )
     report["grade_estimate"] = grade_estimate.to_dict()
 

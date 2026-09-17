@@ -1923,6 +1923,46 @@ function cornersEdgesSideHTML(label, sideKey, sideData, images) {
   </div>`;
 }
 
+// The same measured marks, priced by each published standard. Worth showing
+// because they genuinely disagree — a deep gouge is a 5 to PSA and a 4 to
+// CGC, a full-length crease is a 1 to PSA and a 2 to both TAG and CGC — so a
+// single surface number was always hiding a choice of whose rules to apply.
+function surfaceGraderComparisonHTML(surfaceData) {
+  const sides = ["front", "back"].filter((side) => surfaceData[side] && surfaceData[side].by_grader);
+  if (!sides.length) return "";
+  const keys = Object.keys(surfaceData[sides[0]].by_grader);
+  if (!keys.length) return "";
+
+  const rows = keys
+    .map((key) => {
+      const any = surfaceData[sides[0]].by_grader[key];
+      const cells = ["front", "back"]
+        .map((side) => {
+          const entry = surfaceData[side] && surfaceData[side].by_grader && surfaceData[side].by_grader[key];
+          if (!entry || entry.grade === null || entry.grade === undefined) return `<td class="mono">—</td>`;
+          const limit = entry.limited_by ? ` title="limited by ${escapeHtml(entry.limited_by)}"` : "";
+          return `<td class="mono"${limit} style="color:${gradeColor(entry.grade)}">${entry.grade}</td>`;
+        })
+        .join("");
+      return `<tr><th scope="row">${escapeHtml(any.label)}</th>${cells}
+        <td class="grader-source muted">${escapeHtml(any.source || "")}</td></tr>`;
+    })
+    .join("");
+
+  return `<details class="grader-compare">
+    <summary>Surface under every grading service's rubric</summary>
+    <div class="table-scroll">
+      <table class="grader-table">
+        <thead><tr><th>Service</th><th>Front</th><th>Back</th><th>Rubric source</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <p class="field-hint">Surface only — these are not overall grades. Each service's ladder is
+    transcribed from its published standard; where a standard gives a range, the lower grade is
+    taken, and half grades round down.</p>
+  </details>`;
+}
+
 function surfaceSideHTML(sideKey, label, sideData) {
   if (!sideData) return "";
 
@@ -2412,6 +2452,7 @@ function buildReportHTML(report, images) {
       <h2>Surface <span class="method-chip method-chip--strong">measured</span></h2>
       ${surfaceSideHTML("front", "Front", surface.front)}
       ${surfaceSideHTML("back", "Back", surface.back)}
+      ${surfaceGraderComparisonHTML(surface)}
     </section>`;
   }
 

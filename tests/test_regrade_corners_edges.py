@@ -239,3 +239,39 @@ class TestRecomputeOnSave:
 
     def test_missing_warps_are_reported_as_none(self, tmp_path):
         assert regrade.load_aligned(tmp_path) == {"front": None, "back": None}
+
+
+class TestTheDefectCapSurvivesARegrade:
+    """Re-grading after a hand-placed centering edit rebuilds the overall
+    grade from the report's own sections. The crease cap has to be rebuilt
+    with it — dropping it handed a creased card its full grade back the
+    moment someone dragged a centering line."""
+
+    @staticmethod
+    def _report(limited_by: str) -> dict:
+        return {
+            "centering": {"overall_grade": 10},
+            "corners_edges": {"overall_grade": 10},
+            "surface": {
+                "front": {"grade": 4, "limited_by": limited_by},
+                "back": {"grade": 9, "limited_by": "overall surface wear"},
+            },
+        }
+
+    def test_a_named_defect_still_caps_the_card(self):
+        report = self._report("crease")
+        regrade.rescore(report, {})
+        assert report["grade_estimate"]["overall_grade"] == pytest.approx(4.0)
+        assert "crease" in report["grade_estimate"]["note"]
+
+    def test_plain_surface_wear_does_not_cap(self):
+        report = self._report("overall surface wear")
+        regrade.rescore(report, {})
+        assert report["grade_estimate"]["overall_grade"] > 4.0
+
+    def test_an_older_report_without_limited_by_still_rescores(self):
+        report = self._report("crease")
+        del report["surface"]["front"]["limited_by"]
+        del report["surface"]["back"]["limited_by"]
+        regrade.rescore(report, {})
+        assert report["grade_estimate"]["overall_grade"] is not None

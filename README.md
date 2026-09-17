@@ -285,27 +285,50 @@ to a card improved its score.
 Area is not a grading standard. No service grades by coverage, because a crease and a
 scuff of the same area are several grades apart everywhere. So every mark is measured
 and named from its shape — a crease is a fold in stock and so has width, a scratch is
-the track of something dragged and so is narrow and many times longer than it is wide
-— and each kind carries the grade ceiling the published rubrics give it:
+the track of something dragged and so is narrow and many times longer than it is wide:
 
-| mark | shape | ceiling | source |
+| mark | shape |
+|---|---|
+| light scratch | narrow, shallow — sits in the gloss |
+| scratch through the gloss | narrow, deeper |
+| deep gouge | narrow, deepest — cuts the stock |
+| dent | wide, deep, compact |
+| wrinkle | wide, shallow — stock deformed, not broken |
+| **crease** | wide, deep, elongated — stock broken |
+
+Naming a mark is a question about the card. What it *costs* is a question about a
+grading standard — and the three published standards disagree, by as much as four
+grades on one defect. So the ladders live in `thresholds.json` under
+`surface.graders`, one per service, each citing where it came from:
+
+| mark | PSA | TAG | CGC |
 |---|---|---|---|
-| light scratch | narrow, shallow | 9–10 | TAG "does not penetrate the gloss" |
-| scratch through the gloss | narrow, deeper | 8 | TAG 8.5 |
-| deep gouge | narrow, deepest | 5 | PSA "deep scratches … cap at 5–6" |
-| dent | wide, deep, compact | 7 | TAG 7.5 |
-| wrinkle | wide, shallow | 5 | TAG 5 — stock deformed, not broken |
-| **crease** | wide, deep, elongated | **4 → 1 by span** | TAG 4.5; PSA: full crease "usually an automatic 1" |
+| light scratch | 9 | 10 | 9 |
+| scratch through gloss | 7 | 8 | 8 |
+| deep gouge | **5** | 5 | **4** |
+| dent | 7 | 7 | 6 |
+| wrinkle | 6 | 5 | 5 |
+| minor crease | **5** | 4 | 4 |
+| crease over half the card | 3 | 4 | 2 |
+| crease edge to edge | **1** | 2 | 2 |
+| a second crease | −1 | — | −1 |
 
-The worst ceiling on the card sets the grade — real graders do not average defects —
-and the area band remains underneath as the floor, which is what catches a card that
-is covered in marks too small to name. Grades are integers on the PSA scale, so TAG's
-half grades round **down**: this tool exists to decide whether a card is worth
-submitting, and the expensive error is telling someone a creased card will come back
-a 9.
+PSA drives the card's grade, the same way it drives centering; the other two are
+reported alongside as `surface.<side>.by_grader`. Where a standard publishes a range
+("deep scratches cap at 5–6") the **lower** grade is taken, and half grades round
+**down** — this tool exists to decide whether a card is worth paying to submit, and
+the expensive error is telling someone a creased card will come back a 9.
 
-With all of it, the validation pair reads **9 clean against 4 damaged**, the damaged
-card limited by the crease at its bottom-left corner — where the crease actually is.
+The worst ceiling on the card sets the grade, because real graders do not average
+defects. The area band remains underneath as the floor, which is what catches a card
+covered in marks too small to name individually. CGC and PSA also *count*: CGC
+separates "one light crease" from "one or more light creases", and PSA's low grades
+are written in terms of "several creases", so a second crease costs another grade
+under both. TAG's ladder is written by span alone and does not move.
+
+With all of it, the validation pair reads **9 clean against 4 damaged** under PSA (TAG
+4, CGC 3), the damaged card limited by the crease at its bottom-left corner — where
+the crease actually is.
 `tests/test_surface_measures_damage.py` holds the pair; `tests/test_surface_rubric.py`
 holds the ladder against synthetic marks of known geometry.
 
@@ -321,6 +344,26 @@ Two things this does not yet do, both measured:
   difference. They differ only in elongation (1.96 against 1.24 on the one real card
   measured). The honest distinction is whether the stock is broken, which needs the
   back of the card to confirm.
+
+#### A defect caps the card, not the sub-grade
+
+A crease is not a surface problem, it is a card problem. PSA: *"even a light crease
+usually caps you at PSA 6 or below, no matter how perfect everything else looks."* The
+overall heuristic can't express that on its own — it lets the overall sit a point above
+the worst sub-grade, so a card creased end to end came out a 2 where PSA calls a
+full-width crease "usually an automatic 1".
+
+So a ceiling from a **named** physical defect binds the overall grade directly
+(`assemble_grade(defect_grade_cap=...)`), and the reason is stated in the grade's note.
+Ordinary surface wear is not a named defect — that is the area band, and the sub-grade
+already says it, so capping on it would count it twice. `regrade.rescore` rebuilds the
+cap too: without that, dragging a centering line by hand handed a creased card its full
+grade back.
+
+Sources for the ladders, transcribed rather than derived:
+[PSA grading standards](https://www.psacard.com/gradingstandards),
+[TAG grading rubric](https://taggrading.com/pages/rubric),
+[CGC grading scale](https://www.cgccards.com/card-grading/grading-scale/).
 
 ### Stage 4.5 — Card identification (`llm/vision.py`)
 The only model call left in the pipeline, and it never touches a grade. It answers
