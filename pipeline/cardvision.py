@@ -441,7 +441,30 @@ def _noise_sigma(deviation: np.ndarray) -> float:
     return MAD_TO_SIGMA * float(np.percentile(np.asarray(mads), NOISE_FLOOR_PERCENTILE))
 
 
-def _autoscale(deviation: np.ndarray, gain: float, headroom: float = 110.0) -> np.ndarray:
+# The shading deviation that maps to the top of the output range when the
+# render is being *measured* rather than looked at. An absolute number, in the
+# same 0-1 units as the shading deviation itself.
+#
+# It has to be absolute. The displayed render normalizes by the card's own
+# 99.5th percentile, which is right for a picture — every card fills the
+# range — and catastrophic for a measurement, because it makes every number
+# relative to that card's own worst feature. Measured on one card scanned
+# clean and then again after being creased and scratched, the damaged card's
+# normalizer came out 2.55x the clean one's (0.703 vs 0.276), so its ordinary
+# ink was scaled down by that much and it measured *less* defect area than
+# when it was undamaged: surface grade 6 damaged against 3 clean. Adding
+# damage to a card improved its score.
+#
+# The value is calibrated against that one pair and should be treated as
+# provisional. What it is not is a free parameter for taste: changing it
+# changes every surface number, which is exactly the coupling that made the
+# autoscale wrong.
+MEASUREMENT_REFERENCE_DEVIATION = 0.8
+
+
+def _autoscale(
+    deviation: np.ndarray, gain: float, headroom: float = 110.0, reference: float | None = None
+) -> np.ndarray:
     """Map a signed deviation field onto a mid-gray-centered 8-bit image.
 
     Two steps, in this order. First soft-threshold at a few sigmas of the
@@ -450,15 +473,26 @@ def _autoscale(deviation: np.ndarray, gain: float, headroom: float = 110.0) -> n
     would be the sensor's own noise stretched to full contrast, which reads
     as a surface covered in defects.
 
-    Then scale by a high percentile of what survives, rather than by the
-    maximum, because relief always has a few extreme outliers — the warp
-    seam at the card's physical boundary, a dust speck — and normalizing by
-    those would crush every real defect toward invisibility. Same reasoning
-    as `surface._normalize_robust`.
+    Then scale. `reference` is the deviation that maps to the top of the
+    range: pass one to measure, leave it out to display.
+
+    Left out, it is the 99.5th percentile of what survived the threshold —
+    a high percentile rather than the maximum, because relief always has a
+    few extreme outliers (the warp seam at the card's physical boundary, a
+    dust speck) and normalizing by those would crush every real defect
+    toward invisibility. Same reasoning as `surface._normalize_robust`.
+
+    That autoscale is for looking at, never for measuring. It makes the
+    output relative to the card in front of it, so two cards can't be
+    compared and a card can't even be compared with itself before and after
+    damage — see MEASUREMENT_REFERENCE_DEVIATION.
     """
     sigma = _noise_sigma(deviation)
     magnitude = np.maximum(np.abs(deviation) - NOISE_THRESHOLD_SIGMAS * sigma, 0.0)
     shrunk = np.sign(deviation) * magnitude
+
+    if reference is None:
+        reference = float(np.percentile(magnitude, 99.5))
 
     # A soft knee rather than a hard clip. Linear in the middle — tanh(x) is
     # x for small x, so ordinary relief is unchanged — and compressing at the
@@ -466,12 +500,17 @@ def _autoscale(deviation: np.ndarray, gain: float, headroom: float = 110.0) -> n
     # or white. That flattening is what made the render read as hard outlines
     # instead of a surface: once two features both clip, nothing distinguishes
     # a deep gouge from a printed rule.
-    reference = float(np.percentile(magnitude, 99.5))
     scale = gain / max(reference, MIN_RELIEF_DEVIATION)
     return np.clip(128.0 + headroom * np.tanh(scale * shrunk), 0, 255).astype(np.uint8)
 
 
-def shade_normals(normals: np.ndarray, azimuth_deg: float, elevation_deg: float, gain: float) -> np.ndarray:
+def shade_normals(
+    normals: np.ndarray,
+    azimuth_deg: float,
+    elevation_deg: float,
+    gain: float,
+    reference: float | None = None,
+) -> np.ndarray:
     """Render the normal map under a virtual raking light, albedo discarded.
 
     Discarding albedo is the whole point: the output shows shape only, so
@@ -483,7 +522,56 @@ def shade_normals(normals: np.ndarray, azimuth_deg: float, elevation_deg: float,
     # A perfectly flat card shades to sin(elevation); center on that so flat
     # regions land on mid-gray and only deviations carry signal.
     flat_level = float(np.sin(np.radians(elevation_deg)))
-    return _autoscale(shading - flat_level, gain)
+    return _autoscale(shading - flat_level, gain, reference=reference)
+
+
+# Where the print is, and how far past its edges to reach. Ink sits proud of
+# the cardstock, so a solved normal map contains the artwork as real relief —
+# measured on one card, 87% of the pixels the surface stage flagged as defects
+# lay on printed ink. Photometric stereo removes albedo; it does not remove
+# the physical thickness of the ink laid on top.
+INK_GRADIENT_PERCENTILE = 88.0
+INK_MASK_DILATE_PX = 9
+
+
+def ink_mask(albedo: np.ndarray, cfg: dict) -> np.ndarray:
+    """The printed areas, found in the solved albedo.
+
+    Albedo is the card's own colour with the shading divided out, so its
+    gradient is exactly where ink starts and stops — and that is where ink
+    relief lives. Dilated, because the raised edge of a printed line extends
+    past the colour boundary that produced it.
+    """
+    gray = albedo if albedo.ndim == 2 else cv2.cvtColor(albedo, cv2.COLOR_BGR2GRAY)
+    gray = gray.astype(np.float32)
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    gradient = cv2.GaussianBlur(np.sqrt(gx * gx + gy * gy), (0, 0), 2.0)
+    cutoff = float(np.percentile(gradient, cfg.get("ink_gradient_percentile", INK_GRADIENT_PERCENTILE)))
+    mask = (gradient > cutoff).astype(np.uint8)
+    dilate = int(cfg.get("ink_mask_dilate_px", INK_MASK_DILATE_PX))
+    return cv2.dilate(mask, np.ones((dilate, dilate), np.uint8))
+
+
+def suppress_ink(relief: np.ndarray, albedo: np.ndarray, cfg: dict) -> np.ndarray:
+    """Flatten the relief wherever the card is printed.
+
+    Applied to the measured render and never to the displayed one. The
+    picture should show the ink — it is most of what makes a relief render
+    legible as a card — but counting it as damage is what made an undamaged
+    card grade 3 while the same card, creased and scratched, graded 6.
+
+    The cost is real and worth stating: a scratch running through printed
+    artwork is suppressed along with the print, so this trades sensitivity
+    inside the art for the ability to compare two cards at all. Measured on
+    one card clean and then damaged, it moved the pair from 6/6 (with the
+    clean card reading *worse*) to 10 clean against 9 damaged.
+    """
+    if albedo is None:
+        return relief
+    out = relief.copy()
+    out[ink_mask(albedo, cfg) > 0] = 128
+    return out
 
 
 def normal_map_visualization(normals: np.ndarray) -> np.ndarray:
@@ -531,21 +619,32 @@ def photometric_card_vision(
     norms = np.linalg.norm(normals, axis=2, keepdims=True)
     normals = normals / np.maximum(norms, 1e-6)
 
-    def render(gain: float) -> np.ndarray:
-        return blank_warp_seam(shade_normals(normals, RENDER_AZIMUTH_DEG, RENDER_ELEVATION_DEG, gain), cfg)
+    def render(gain: float, reference: float | None = None) -> np.ndarray:
+        return blank_warp_seam(
+            shade_normals(normals, RENDER_AZIMUTH_DEG, RENDER_ELEVATION_DEG, gain, reference), cfg
+        )
 
-    gain = cfg.get("relief_gain", 1.0)
-    relief = render(gain)
-    # Measured at unit gain whatever the display is set to, so the thresholds
-    # in thresholds.json mean one fixed thing.
-    measurement = relief if gain == 1.0 else render(1.0)
+    # The picture autoscales so every card fills the range and is worth
+    # looking at. The measurement does not: it is rendered at unit gain
+    # against a fixed absolute reference, so a given physical relief maps to
+    # the same number on every card and the thresholds in thresholds.json
+    # mean one fixed thing. Sharing one autoscaled render between the two —
+    # which is what this did — made every surface number relative to the
+    # card's own worst feature.
+    relief = render(cfg.get("relief_gain", 1.0))
+    albedo_u8 = np.clip(albedo * 255.0, 0, 255).astype(np.uint8)
+    measurement = suppress_ink(
+        render(1.0, cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)),
+        albedo_u8,
+        cfg,
+    )
 
     return CardVisionResult(
         relief=relief,
         method="photometric_stereo",
         light_count=len(images_bgr),
         normal_map=normal_map_visualization(normals),
-        albedo=np.clip(albedo * 255.0, 0, 255).astype(np.uint8),
+        albedo=albedo_u8,
         roughness_pct=_roughness_pct(measurement, cfg),
         registration=registration,
         measurement_relief=measurement,
@@ -587,7 +686,12 @@ def single_image_card_vision(image_bgr: np.ndarray, cfg: dict) -> CardVisionResu
     deviation = residual * print_weight / 255.0
     gain = cfg.get("single_image_gain", 1.0)
     relief_u8 = blank_warp_seam(_autoscale(deviation, gain), cfg)
-    measurement = relief_u8 if gain == 1.0 else blank_warp_seam(_autoscale(deviation, 1.0), cfg)
+    measurement = blank_warp_seam(
+        _autoscale(
+            deviation, 1.0, reference=cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)
+        ),
+        cfg,
+    )
 
     return CardVisionResult(
         relief=relief_u8,

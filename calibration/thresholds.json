@@ -675,7 +675,10 @@
     "chroma_suppression": 24.0,
     "single_image_gain": 3.0,
     "flat_band": 18,
-    "physical_edge_margin_px": 8
+    "physical_edge_margin_px": 8,
+    "measurement_reference_deviation": 0.8,
+    "ink_gradient_percentile": 88.0,
+    "ink_mask_dilate_px": 9
   },
   "dimensions": {
     "tolerance_mm": 0.75,

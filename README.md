@@ -254,9 +254,32 @@ What the signal is decides how much weight it carries:
 This used to require a vision model, and for the raking-light photo it used to start
 from that was the right call: a fixed threshold genuinely cannot separate a scratch
 from holo sparkle.
-**Photometric stereo removes the premise.** A surface-normal map contains no albedo,
-so foil, artwork and print lines are gone before anything is measured, and a
-threshold against that signal is a measurement rather than a guess.
+**Photometric stereo removes most of the premise.** A surface-normal map contains no
+albedo, so foil and flat colour are gone before anything is measured. What it does
+*not* remove is the ink itself: printed ink sits physically proud of the cardstock, so
+the artwork survives into the normal map as real relief. Measured on one card, **87% of
+the pixels the surface stage flagged as defects lay on printed ink.** So the measured
+render has the print suppressed using the solved albedo, whose gradient is exactly
+where ink starts and stops (`cardvision.suppress_ink`). The *displayed* render keeps
+the ink — it is most of what makes a relief render legible as a card.
+
+The cost is worth stating plainly: a scratch running through printed artwork is
+suppressed along with the print. That trades sensitivity inside the art for the
+ability to compare two cards at all.
+
+Two scales, for the same reason:
+
+| render | scaled by | for |
+|---|---|---|
+| `relief` | the card's own 99.5th percentile | looking at — every card fills the range |
+| `measurement_relief` | a fixed absolute deviation | measuring — the same relief means the same number on every card |
+
+Sharing one autoscaled render between the two is what made an undamaged card grade
+**surface 3** while the same card — creased, scratched twice and whitened along two
+edges — graded **6**. Every number was relative to that card's own worst feature, so
+the damage inflated the normaliser (2.55x) and scaled its own ink down. Adding damage
+to a card improved its score. With both fixes the pair reads **10 clean against 9
+damaged**; `tests/test_surface_measures_damage.py` holds it there.
 
 ### Stage 4.5 — Card identification (`llm/vision.py`)
 The only model call left in the pipeline, and it never touches a grade. It answers
