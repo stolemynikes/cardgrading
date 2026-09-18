@@ -304,10 +304,14 @@ def prune_report_images(base_dir: Path, keep_full: int = DEFAULT_KEEP_FULL_IMAGE
 # the job the moment its report appeared, and the operator's scanner software
 # had not kept a copy either.
 #
-# Not more than one, because they are large: a six-file set at 1200dpi is
-# about 0.8GB as TIFF. One set is affordable on the machine this runs on; a
-# history of them is not.
-DEFAULT_KEEP_RAW_UPLOADS = 1
+# Four, because a calibration session is several cards in a row and keeping
+# only the newest would delete the originals of every card but the last one as
+# it was uploaded — the exact loss this exists to prevent, arriving faster.
+#
+# Not many more, because they are large: a six-file set at 1200dpi is about
+# 0.8GB as TIFF, so four sets is roughly 3GB. That fits on the machine this
+# runs on with room to spare; a history of them would not.
+DEFAULT_KEEP_RAW_UPLOADS = 4
 
 
 def save_uploads(base_dir: Path, report_id: str, uploads: dict[str, Path]) -> int:

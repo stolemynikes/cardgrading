@@ -618,6 +618,29 @@ fitted calibration weights fit card variance instead of capture variance.
 - Glossy cards pressed to glass can produce **Newton's rings**; if you see rainbow
   interference banding, the holo-variance mask will read it as foil.
 
+### Is the scanner measuring straight? (`calibration/check_scanner_scale.py`)
+
+```bash
+.venv/bin/python calibration/check_scanner_scale.py portrait.tif landscape.tif --dpi 1200
+```
+
+A trading card measured **2.9% larger placed landscape than placed portrait** on a real
+scanner — 1.8mm on a 63mm card, against a 0.75mm grading tolerance. Two explanations fit
+that equally well and want opposite fixes: the scanner's two axes are scaled differently
+(correctable in software), or the card bows off the glass (correctable only by handling).
+
+A trading card cannot separate them, because it can do both. An **ISO/IEC 7810 ID-1**
+card can — bank card, driving licence, national ID, transit card, loyalty card are all
+made to it. Rigid PVC, so it cannot bow, and exactly **85.60 x 53.98mm**, so the error
+becomes a number instead of a suspicion. Scan one twice at the same settings, once each
+way round; the script measures both and either clears the scanner or prints the exact
+per-axis correction.
+
+It matters beyond dimensions: the four rotation scans disagreeing about where the card's
+edge is, by up to a millimetre, is what forces the surface measurement to discard the
+card's outer 1.5mm — **6.4% of every card**, most of it genuine card rather than
+background.
+
 ## Calibration
 
 `calibration/calibrate.py` batch-runs the pipeline against a JSON manifest of cards
