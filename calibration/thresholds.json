@@ -19,7 +19,11 @@
       "ring_fraction": 0.05,
       "max_brightness_gradient": 40
     },
-    "aspect_ratio_tolerance_upright_pct": 8.0
+    "aspect_ratio_tolerance_upright_pct": 8.0,
+    "axis_dpi_scale": {
+      "x": 1.0,
+      "y": 1.004
+    }
   },
   "centering": {
     "front_tolerances": [

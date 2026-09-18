@@ -641,6 +641,19 @@ edge is, by up to a millimetre, is what forces the surface measurement to discar
 card's outer 1.5mm — **6.4% of every card**, most of it genuine card rather than
 background.
 
+Run on the scanner this was built against (Canon LiDe 400, 1200dpi), the answer was
+that the scanner is very nearly innocent:
+
+| scanner axis | mean error |
+|---|---|
+| horizontal (the sensor bar, fixed by photosite spacing) | **−0.07%** |
+| vertical (the head swept by a stepper motor) | **+0.40%** |
+
+Exactly the asymmetry the hardware predicts. The vertical correction is applied via
+`capture.axis_dpi_scale`, and is worth 0.25mm on a 63mm card — against the 1.80mm that
+the trading card actually varied by. So the scanner accounts for about **14%** of the
+problem and something else accounts for the rest.
+
 ## Calibration
 
 `calibration/calibrate.py` batch-runs the pipeline against a JSON manifest of cards

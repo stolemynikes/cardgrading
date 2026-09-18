@@ -219,3 +219,63 @@ class TestBothSidesAreMeasurements:
         )
         assert result.within_tolerance is None
         assert "disagree" in result.note
+
+
+class TestThePerAxisScaleCorrection:
+    """A flatbed's two axes are not built the same way.
+
+    Across the sensor bar the scale is set by the spacing of the photosites and
+    is fixed in silicon; down the glass it is set by a stepper motor dragging
+    the head, and can drift. Measured on a real scanner with an ISO/IEC 7810
+    ID-1 card — rigid, exactly 85.60 x 53.98mm — scanned both ways round so
+    each axis measured both of the card's edges: horizontal -0.07%, vertical
+    +0.40%.
+    """
+
+    THRESHOLDS = {"dimensions": {"tolerance_mm": 0.75, "squareness_tolerance_deg": 1.0}}
+
+    @staticmethod
+    def _quad(width_px: float, height_px: float) -> np.ndarray:
+        return np.array([[0, 0], [width_px, 0], [width_px, height_px], [0, height_px]], dtype=np.float32)
+
+    def test_no_correction_configured_leaves_the_measurement_alone(self):
+        quad = self._quad(63.0 / 25.4 * 1200, 88.0 / 25.4 * 1200)
+        result = dimensions.measure_dimensions(quad, 1200.0, self.THRESHOLDS)
+        assert result.width_mm == pytest.approx(63.0, abs=0.01)
+        assert result.height_mm == pytest.approx(88.0, abs=0.01)
+
+    def test_a_long_reading_vertical_axis_is_pulled_back(self):
+        """A scanner whose sweep reads 0.4% long measures a true 88mm card as
+        88.35mm. With the correction it reads true again."""
+        quad = self._quad(63.0 / 25.4 * 1200, 88.0 * 1.004 / 25.4 * 1200)
+        thresholds = {**self.THRESHOLDS, "capture": {"axis_dpi_scale": {"x": 1.0, "y": 1.004}}}
+        uncorrected = dimensions.measure_dimensions(quad, 1200.0, self.THRESHOLDS)
+        corrected = dimensions.measure_dimensions(quad, 1200.0, thresholds)
+        assert uncorrected.height_mm == pytest.approx(88.35, abs=0.02)
+        assert corrected.height_mm == pytest.approx(88.0, abs=0.02)
+
+    def test_the_other_axis_is_untouched(self):
+        quad = self._quad(63.0 / 25.4 * 1200, 88.0 / 25.4 * 1200)
+        thresholds = {**self.THRESHOLDS, "capture": {"axis_dpi_scale": {"x": 1.0, "y": 1.004}}}
+        assert dimensions.measure_dimensions(quad, 1200.0, thresholds).width_mm == pytest.approx(63.0, abs=0.01)
+
+    def test_it_applies_to_the_image_axes_not_the_card_edges(self):
+        """The correction belongs to the scanner, so it follows the image's
+        axes — a card laid landscape has its long edge measured by the
+        horizontal axis and must not be corrected as if it were vertical."""
+        landscape = self._quad(88.0 * 1.0 / 25.4 * 1200, 63.0 * 1.004 / 25.4 * 1200)
+        thresholds = {**self.THRESHOLDS, "capture": {"axis_dpi_scale": {"x": 1.0, "y": 1.004}}}
+        result = dimensions.measure_dimensions(landscape, 1200.0, thresholds)
+        # measure_dimensions reports width as the shorter side whichever way
+        # the card was laid, so a correctly corrected landscape scan is 63x88.
+        assert result.width_mm == pytest.approx(63.0, abs=0.02)
+        assert result.height_mm == pytest.approx(88.0, abs=0.02)
+
+    def test_the_shipped_configuration_matches_what_was_measured(self):
+        import json
+
+        from webapp import main
+
+        scale = json.loads(main.THRESHOLDS_PATH.read_text())["capture"]["axis_dpi_scale"]
+        assert scale["x"] == pytest.approx(1.0)
+        assert scale["y"] == pytest.approx(1.004, abs=0.0005)

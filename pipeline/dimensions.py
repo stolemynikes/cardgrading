@@ -79,6 +79,33 @@ class DimensionsResult:
         }
 
 
+# A flatbed's two axes are not built the same way, so they need not measure the
+# same. Across the sensor bar the scale is set by the spacing of the photosites
+# and is fixed in silicon; down the glass it is set by a stepper motor dragging
+# the head, and can drift.
+#
+# Measured on the scanner this runs on, with an ISO/IEC 7810 ID-1 card — rigid
+# PVC, exactly 85.60 x 53.98mm — scanned once each way round so each axis
+# measured both of the card's edges:
+#
+#     horizontal (sensor bar)   -0.07%   essentially perfect
+#     vertical   (head sweep)   +0.40%   reads long
+#
+# So the vertical axis is really running at about 1200 x 1.004 dpi when it is
+# told 1200. Correcting it costs nothing and is worth 0.25mm on a 63mm card.
+#
+# Worth keeping in proportion: the same trading card varied by 1.80mm between
+# placements, so this explains only 14% of it. The rest was the card bowing off
+# the glass, which is a handling problem and no correction here can touch it.
+DEFAULT_AXIS_DPI_SCALE = {"x": 1.0, "y": 1.0}
+
+
+def _axis_dpi(dpi: float, thresholds: dict) -> tuple[float, float]:
+    """Effective DPI along each image axis, after the scanner's own bias."""
+    scale = (thresholds.get("capture", {}) or {}).get("axis_dpi_scale") or DEFAULT_AXIS_DPI_SCALE
+    return dpi * float(scale.get("x", 1.0)), dpi * float(scale.get("y", 1.0))
+
+
 def _side_lengths_px(corners: np.ndarray) -> tuple[float, float]:
     """Mean width and height of the quad, corners ordered tl,tr,br,bl.
 
@@ -111,10 +138,13 @@ def measure_dimensions(
             False, None, None, None, None, None, None, "no card quad was detected to measure"
         )
 
-    mm_per_px = MM_PER_INCH / dpi
+    # Each axis gets its own scale: the quad's corners are in the source
+    # image's coordinates, so its x runs across the sensor bar and its y runs
+    # down the glass, whichever way round the card was placed.
+    dpi_x, dpi_y = _axis_dpi(dpi, thresholds)
     width_px, height_px = _side_lengths_px(corners)
-    width_mm = float(width_px * mm_per_px)
-    height_mm = float(height_px * mm_per_px)
+    width_mm = float(width_px * MM_PER_INCH / dpi_x)
+    height_mm = float(height_px * MM_PER_INCH / dpi_y)
 
     # A card scanned in landscape measures 88x63; compare against whichever
     # orientation fits rather than failing a correctly-cut card.
