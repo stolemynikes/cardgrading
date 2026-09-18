@@ -185,6 +185,7 @@ async def run_job(
     thresholds: dict,
     output_dir: Path,
     job_root: Path,
+    uploads: dict[str, Path] | None = None,
     dpi: float | None = None,
     photometric_paths: tuple[list[Path] | None, list[Path] | None] = (None, None),
     rotation: str = "cw",
@@ -237,6 +238,15 @@ async def run_job(
                         store.prune_report_images(reports_dir)
                     except OSError:
                         pass
+                    # Keep the originals for the newest report only. Without
+                    # this the uploads die with the job's temp directory and a
+                    # fix can never be tested against the capture that
+                    # prompted it — which has already cost two rewrites.
+                    try:
+                        store.save_uploads(reports_dir, job_id, uploads or {})
+                        store.prune_report_uploads(reports_dir)
+                    except OSError as e:
+                        job.save_error = f"report saved, raw uploads not kept: {e}"
                 except OSError as e:
                     job.save_error = str(e)
 

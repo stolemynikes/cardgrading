@@ -672,6 +672,12 @@ cloudflared tunnel --url http://localhost:8000
 - **No accounts**: uploads live in a per-job temp dir deleted in a `finally`;
   stale temp dirs are swept on startup. The vision judgment (Stage 4.5) is
   optional — the app works fully without API credentials.
+- **The raw uploads are kept for the newest report**, under
+  `reports/<job-id>/uploads/`, exactly as they arrived. Twice in one evening a fix
+  could not be tested against the capture that prompted it — a detector bug on the two
+  scans that had failed, and an alignment rewrite — because the uploads died with the
+  job's temp directory the moment the report appeared, and the scanner software hadn't
+  kept a copy either. One set only: a six-file set at 1200dpi is about 0.8GB.
 - **Finished reports are kept** under `reports/<job-id>/`, and bounded there. A
   photometric report is ~140MB, most of it the full-scale detail warps and the
   stored rotation scans, which exist only to be zoomed into. After each save,

@@ -121,6 +121,13 @@ async def api_grade(
 
     thresholds = detect.load_thresholds(THRESHOLDS_PATH)
 
+    # The files exactly as they arrived, kept with the report so the capture
+    # that prompted a fix is still there to test the fix against.
+    uploads = {"front_upload": front_path, "back_upload": back_path}
+    for side, side_paths in photometric_paths.items():
+        for index, scan_path in enumerate(side_paths or []):
+            uploads[f"{side}_photometric_{index}"] = scan_path
+
     jobs.schedule(
         jobs.run_job(
             job_id,
@@ -129,6 +136,7 @@ async def api_grade(
             thresholds,
             output_dir,
             job_root,
+            uploads=uploads,
             dpi=dpi,
             photometric_paths=(photometric_paths["front"], photometric_paths["back"]),
             rotation=rotation,

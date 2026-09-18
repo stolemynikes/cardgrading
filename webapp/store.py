@@ -295,6 +295,76 @@ def prune_report_images(base_dir: Path, keep_full: int = DEFAULT_KEEP_FULL_IMAGE
     return pruned
 
 
+# How many reports keep the raw files that were uploaded to them.
+#
+# One, because the point is narrow: to be able to re-run an experiment on the
+# card you just graded. Twice in one evening a fix could not be tested against
+# the capture that motivated it — a detector bug on the two scans that had
+# failed, and an alignment rewrite — because the originals were deleted with
+# the job the moment its report appeared, and the operator's scanner software
+# had not kept a copy either.
+#
+# Not more than one, because they are large: a six-file set at 1200dpi is
+# about 0.8GB as TIFF. One set is affordable on the machine this runs on; a
+# history of them is not.
+DEFAULT_KEEP_RAW_UPLOADS = 1
+
+
+def save_uploads(base_dir: Path, report_id: str, uploads: dict[str, Path]) -> int:
+    """Keep the files that were uploaded to this report, under their own names.
+
+    Best-effort and never fatal: these are a convenience for re-running work,
+    and failing to store them must not cost the report they belong to.
+    """
+    directory = report_dir(base_dir, report_id)
+    if directory is None or not directory.is_dir():
+        return 0
+    target = directory / "uploads"
+    target.mkdir(parents=True, exist_ok=True)
+    kept = 0
+    for name, path in uploads.items():
+        if not IMAGE_KEY_PATTERN.match(name) or not path.exists():
+            continue
+        shutil.copyfile(path, target / name)
+        kept += 1
+    return kept
+
+
+def upload_paths(base_dir: Path, report_id: str) -> list[Path]:
+    """The raw files kept for a report, if they are still there."""
+    directory = report_dir(base_dir, report_id)
+    if directory is None:
+        return []
+    uploads = directory / "uploads"
+    return sorted(uploads.iterdir()) if uploads.is_dir() else []
+
+
+def prune_report_uploads(base_dir: Path, keep: int = DEFAULT_KEEP_RAW_UPLOADS) -> list[str]:
+    """Drop the raw uploads from every report but the newest `keep`."""
+    if keep < 0:
+        raise ValueError("keep must not be negative")
+    if not base_dir.is_dir():
+        return []
+
+    dated = []
+    for child in base_dir.iterdir():
+        if not child.is_dir() or not is_valid_report_id(child.name):
+            continue
+        meta = _read_meta(child)
+        if not meta:
+            continue
+        dated.append((meta.get("created_at") or "", child))
+    dated.sort(key=lambda item: item[0], reverse=True)
+
+    pruned = []
+    for _, directory in dated[keep:]:
+        uploads = directory / "uploads"
+        if uploads.is_dir():
+            shutil.rmtree(uploads, ignore_errors=True)
+            pruned.append(directory.name)
+    return pruned
+
+
 def delete_report(base_dir: Path, report_id: str) -> bool:
     directory = report_dir(base_dir, report_id)
     if directory is None or not directory.is_dir():

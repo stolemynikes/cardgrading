@@ -210,3 +210,93 @@ def test_a_pruning_failure_does_not_cost_the_report(tmp_path, monkeypatch):
     job = jobs.get_job(job_id)
     assert job.status == "done"
     assert job.result["report_id"] == job_id
+
+
+class TestTheRawUploadsAreKept:
+    """The files as they arrived, kept with the newest report.
+
+    Twice in one evening a fix could not be tested against the capture that
+    prompted it — a detector bug on the two scans that had failed, and an
+    alignment rewrite — because the uploads were deleted with the job's temp
+    directory the moment its report appeared, and the operator's scanner
+    software had not kept a copy either.
+    """
+
+    def _uploads(self, tmp_path) -> dict:
+        made = {}
+        for name in ("front_upload", "back_upload", "front_photometric_0", "front_photometric_1"):
+            path = tmp_path / name
+            path.write_bytes(name.encode() * 64)
+            made[name] = path
+        return made
+
+    def test_they_survive_the_job(self, reports, tmp_path):
+        reports_dir, ids = reports
+        store.save_uploads(reports_dir, ids[-1], self._uploads(tmp_path))
+        kept = {p.name for p in store.upload_paths(reports_dir, ids[-1])}
+        assert kept == {"front_upload", "back_upload", "front_photometric_0", "front_photometric_1"}
+
+    def test_they_are_byte_for_byte_what_arrived(self, reports, tmp_path):
+        """The point is re-running work on the original, so a re-encoded or
+        resized copy would be worthless."""
+        reports_dir, ids = reports
+        uploads = self._uploads(tmp_path)
+        store.save_uploads(reports_dir, ids[-1], uploads)
+        for path in store.upload_paths(reports_dir, ids[-1]):
+            assert path.read_bytes() == uploads[path.name].read_bytes()
+
+    def test_only_the_newest_report_keeps_them(self, reports, tmp_path):
+        """A six-file set at 1200dpi is about 0.8GB. One is affordable on this
+        machine; a history of them is not."""
+        reports_dir, ids = reports
+        for report_id in ids:
+            store.save_uploads(reports_dir, report_id, self._uploads(tmp_path))
+        store.prune_report_uploads(reports_dir, keep=1)
+        assert store.upload_paths(reports_dir, ids[-1]), "the newest must keep them"
+        for report_id in ids[:-1]:
+            assert store.upload_paths(reports_dir, report_id) == []
+
+    def test_pruning_them_leaves_the_report_intact(self, reports, tmp_path):
+        reports_dir, ids = reports
+        store.save_uploads(reports_dir, ids[0], self._uploads(tmp_path))
+        store.prune_report_uploads(reports_dir, keep=1)
+        loaded = store.load_report(reports_dir, ids[0])
+        assert loaded is not None
+        assert loaded["report"]["grade_estimate"]["overall_grade_rounded"] == 9
+        assert "front_aligned" in loaded["images"]
+
+    def test_a_report_with_no_uploads_is_not_an_error(self, reports):
+        reports_dir, ids = reports
+        assert store.upload_paths(reports_dir, ids[0]) == []
+        assert store.prune_report_uploads(reports_dir, keep=1) == []
+
+    def test_a_malformed_id_stores_nothing(self, tmp_path):
+        assert store.save_uploads(tmp_path, "not-a-uuid", {"front_upload": tmp_path}) == 0
+
+    def test_a_negative_keep_is_a_programming_error(self, reports):
+        reports_dir, _ = reports
+        with pytest.raises(ValueError):
+            store.prune_report_uploads(reports_dir, keep=-1)
+
+    def test_the_job_keeps_them_without_being_asked(self, tmp_path, monkeypatch):
+        """The wiring. Kept files nobody stores are no use."""
+        import asyncio
+
+        from webapp import jobs
+
+        monkeypatch.setattr(jobs, "grade_card", lambda *a, **k: _report())
+        job_id = jobs.create_job()
+        job_root = tmp_path / "job"
+        (job_root / "output").mkdir(parents=True)
+        uploads = self._uploads(job_root)
+        reports_dir = tmp_path / "reports"
+
+        asyncio.run(
+            jobs.run_job(
+                job_id, job_root / "front_upload", job_root / "back_upload", {},
+                job_root / "output", job_root, uploads=uploads, reports_dir=reports_dir,
+            )
+        )
+        assert jobs.get_job(job_id).status == "done"
+        assert {p.name for p in store.upload_paths(reports_dir, job_id)} == set(uploads)
+        assert not job_root.exists(), "the temp dir should still be cleaned up"
