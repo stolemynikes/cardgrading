@@ -847,7 +847,8 @@
     "ink_gradient_percentile": 84.0,
     "ink_mask_dilate_px": 9,
     "ink_gradient_percentile_edges": 88.0,
-    "surface_edge_margin_mm": 1.5
+    "surface_edge_margin_mm": 1.5,
+    "display_flatten_sigma_px": 100.0
   },
   "dimensions": {
     "tolerance_mm": 0.75,

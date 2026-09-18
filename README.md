@@ -417,6 +417,36 @@ defect lands in the sub-grade whose job it is: corners **3** (the crease), edges
 `tests/test_surface_measures_damage.py` holds the pair; `tests/test_surface_rubric.py`
 holds the ladder against synthetic marks of known geometry.
 
+#### Large-scale slope is not measurable, so it isn't displayed
+
+The relief renders carried a smooth ripple that grew **sevenfold** from the card's centre
+to its corners — 3.09 grey levels against 21.99 on a real capture. It isn't the card: two
+captures of the same card correlate **−0.071** on that component, with amplitudes
+differing threefold.
+
+Four explanations were tested against real scans and disproved — the card's own shape,
+uneven bed illumination (worth only a quarter of it), detecting once on an aligned stack
+instead of per frame (algebraically near-identical to what it replaced), and homography
+instead of affine registration. The leftover local misalignment after registration is
+about **one pixel**, which cannot produce low-frequency ripple in a flat region, so it
+isn't geometric at all.
+
+What remains, untested, is the light model. The solve assumes a single light direction
+for the whole card, but a CIS scanner's LEDs sit millimetres above the glass, so the
+angle light arrives at varies across the sensor bar. Turn the card and that variation
+lands somewhere different — smooth, growing outward, differing per capture.
+
+So structure larger than ~4mm is removed from the **displayed** render
+(`display_flatten_sigma_px`). Nothing gradeable is that big; a crease is about a
+millimetre. The **measured** render keeps it, for two reasons: removing it there costs
+27% of the defect area on a genuinely damaged card, and the measurement never saw it
+anyway — it is smooth and sits below the defect threshold, so an undamaged card reads
+0.006% either way.
+
+It hides nothing. On the damaged card the scratches, the fold, the corner crease and the
+edge disturbance are all *more* visible afterwards, against a background that is finally
+flat.
+
 #### No defect may hide from the light
 
 A virtual light casts no shadow along a defect that runs parallel to it, so a single

@@ -681,7 +681,7 @@ def photometric_card_vision(
     # looks like and a render averaged over four lights reads flat. The
     # measurement is swept, because a fixed light has a blind direction and the
     # grade must not depend on which one was picked.
-    relief = render(cfg.get("relief_gain", 1.0))
+    relief = flatten_display_relief(render(cfg.get("relief_gain", 1.0)), cfg)
     albedo_u8 = np.clip(albedo * 255.0, 0, 255).astype(np.uint8)
     reference = cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)
     measurement = _blank_border(suppress_ink(swept(reference), albedo_u8, cfg), cfg)
@@ -736,7 +736,7 @@ def single_image_card_vision(image_bgr: np.ndarray, cfg: dict) -> CardVisionResu
     # shading deviation, so one autoscale serves both paths.
     deviation = residual * print_weight / 255.0
     gain = cfg.get("single_image_gain", 1.0)
-    relief_u8 = blank_warp_seam(_autoscale(deviation, gain), cfg)
+    relief_u8 = flatten_display_relief(blank_warp_seam(_autoscale(deviation, gain), cfg), cfg)
     measurement = blank_warp_seam(
         _autoscale(
             deviation, 1.0, reference=cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)
@@ -798,6 +798,46 @@ def single_image_card_vision(image_bgr: np.ndarray, cfg: dict) -> CardVisionResu
 # The route to going narrower is fixing the second problem above — the frames
 # disagreeing about where the edge is — not this constant.
 SURFACE_EDGE_MARGIN_MM = 1.5
+
+
+# Structure larger than this, in pixels, is removed from the *displayed*
+# relief. Nothing on a card is this big: a crease is about a millimetre wide,
+# and this is four.
+#
+# What it removes is a smooth ripple that grows sevenfold from the card's
+# centre to its corners — 3.09 grey levels against 21.99 on a real capture. It
+# is not the card: two captures of the same card correlate -0.071 on this
+# component, with amplitudes differing threefold. Four explanations were tested
+# and disproved (the card's own shape, uneven bed illumination, detecting once
+# on an aligned stack rather than per frame, and homography instead of affine
+# registration), and the local misalignment left after registration is about a
+# pixel, which cannot produce low-frequency ripple in flat regions of a card.
+#
+# What remains, untested, is the light model: a CIS scanner's LEDs sit
+# millimetres above the glass, so the angle light arrives at varies across the
+# bar, while the solve assumes one direction for the whole card. Rotate the
+# card and that variation lands somewhere different — smooth, growing outward,
+# differing per capture, which is all three signatures.
+#
+# Display only. The measured render keeps it, because removing it there costs
+# 27% of the defect area measured on a genuinely damaged card, and because the
+# measurement never saw it anyway: it is smooth and sits below the defect
+# threshold, so an undamaged card reads 0.006% with it and 0.003% without.
+# Removing it from the picture makes the picture agree with the grade, and
+# makes real damage easier to see rather than harder — on the damaged card the
+# scratches, the fold, the corner crease and the edge disturbance all stand out
+# more clearly against a flat background.
+DISPLAY_FLATTEN_SIGMA_PX = 100.0
+
+
+def flatten_display_relief(relief: np.ndarray, cfg: dict) -> np.ndarray:
+    """Drop structure far larger than any defect from the displayed render."""
+    sigma = cfg.get("display_flatten_sigma_px", DISPLAY_FLATTEN_SIGMA_PX)
+    if not sigma or sigma <= 0:
+        return relief
+    field = relief.astype(np.float32)
+    slow = cv2.GaussianBlur(field, (0, 0), float(sigma))
+    return np.clip(128.0 + (field - slow), 0, 255).astype(np.uint8)
 
 
 def _blank_border(relief: np.ndarray, cfg: dict) -> np.ndarray:

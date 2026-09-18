@@ -8,6 +8,7 @@ several light directions.
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
 
@@ -249,3 +250,69 @@ class TestWarpSeamIsBlanked:
         before = cardvision._roughness_pct(relief, {"flat_band": 18})
         after = cardvision._roughness_pct(cardvision.blank_warp_seam(relief, self.CFG), {"flat_band": 18})
         assert before > 0 and after == 0
+
+
+class TestTheDisplayedReliefIsFlattened:
+    """A smooth ripple grows sevenfold from the card's centre to its corners —
+    3.09 grey levels against 21.99 on a real capture — and it is not the card:
+    two captures of the same card correlate -0.071 on that component.
+
+    It is removed from the picture and kept in the measurement. Removing it
+    from the measurement costs 27% of the defect area on a genuinely damaged
+    card; leaving it in the picture shows prominent structure the grade does
+    not reflect.
+    """
+
+    CFG = {"display_flatten_sigma_px": 100.0}
+
+    @staticmethod
+    def _relief_with_ripple() -> np.ndarray:
+        h, w = 2100, 1500
+        yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+        # a smooth swell, of the kind the solve produces
+        ripple = 28 * np.sin(xx / 420.0) * np.cos(yy / 500.0)
+        relief = np.clip(128 + ripple, 0, 255).astype(np.uint8)
+        relief[900:915, 400:1100] = 235          # a scratch: long, thin, sharp
+        relief[1400:1440, 300:360] = 30          # a dent: compact
+        return relief
+
+    def test_the_ripple_is_removed(self):
+        before = self._relief_with_ripple()
+        after = cardvision.flatten_display_relief(before, self.CFG)
+
+        def swell(img):
+            # measured clear of the stamped defects: a 40px blur would smear
+            # them into the reading and hide what the filter actually did
+            field = cv2.GaussianBlur(img.astype(np.float32), (0, 0), 40) - 128
+            return float(field[100:800, 100:1400].std())
+
+        assert swell(after) < swell(before) / 4, f"{swell(before):.2f} -> {swell(after):.2f}"
+
+    def test_a_scratch_survives_it(self):
+        """A crease is about a millimetre wide and the filter is four, so
+        nothing gradeable is large enough to be touched."""
+        after = cardvision.flatten_display_relief(self._relief_with_ripple(), self.CFG)
+        assert after[900:915, 400:1100].max() > 200
+
+    def test_a_dent_survives_it(self):
+        after = cardvision.flatten_display_relief(self._relief_with_ripple(), self.CFG)
+        assert after[1400:1440, 300:360].min() < 70
+
+    def test_a_flat_card_stays_flat(self):
+        flat = np.full((2100, 1500), 128, np.uint8)
+        assert set(np.unique(cardvision.flatten_display_relief(flat, self.CFG))) == {128}
+
+    def test_it_can_be_turned_off(self):
+        before = self._relief_with_ripple()
+        assert np.array_equal(cardvision.flatten_display_relief(before, {"display_flatten_sigma_px": 0}), before)
+
+    def test_the_measurement_is_not_flattened(self):
+        """The line that must not move. The measured render carries the ripple
+        because removing it there costs real defect sensitivity, and because
+        the ripple is below the defect threshold anyway."""
+        import inspect
+
+        source = inspect.getsource(cardvision.photometric_card_vision)
+        assert "flatten_display_relief(render(" in source
+        assert "flatten_display_relief(swept" not in source
+        assert "flatten_display_relief(_blank_border" not in source
