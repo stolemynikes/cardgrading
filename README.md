@@ -331,6 +331,20 @@ The cost is worth stating plainly: a scratch running through printed artwork is
 suppressed along with the print. That trades sensitivity inside the art for the
 ability to compare two cards at all.
 
+How much counts as ink is set by `ink_gradient_percentile`, and it has a cliff. Swept
+against the validation pair, the damaged card's 10mm gouge holds its full extent down
+to 83 and then collapses — 131px at 80, 28px at 76. The setting is **84**: the most
+print suppression at which known damage is still measured in full, with a step of
+margin. At 88 the clean card carried 72 residual ink marks; at 84 it carries none.
+
+The **edges use a looser setting** (`ink_gradient_percentile_edges`, 88), because the
+same signal means different things in different places. In the card's interior, relief
+that follows a colour edge is print. At the border it is just as likely to be
+**whitening** — exposed cardstock is a colour change as well as a physical one — so
+suppressing as hard there deletes the defect being looked for. Measured: tightening the
+edges to the interior's 84 took a deliberately whitened edge from 1.21% wear to 0.15%
+and handed the card back a clean edges grade.
+
 Two scales, for the same reason:
 
 | render | scaled by | for |
@@ -390,9 +404,9 @@ separates "one light crease" from "one or more light creases", and PSA's low gra
 are written in terms of "several creases", so a second crease costs another grade
 under both. TAG's ladder is written by span alone and does not move.
 
-With all of it, the validation pair reads **9 clean against 4 damaged** under PSA (TAG
-4, CGC 3), the damaged card limited by the crease at its bottom-left corner — where
-the crease actually is.
+With all of it, the validation pair reads **10 clean against 4 damaged**, and each
+defect lands in the sub-grade whose job it is: corners **3** (the crease), edges **8**
+(the whitening), surface **7** (the 10.2mm gouge).
 `tests/test_surface_measures_damage.py` holds the pair; `tests/test_surface_rubric.py`
 holds the ladder against synthetic marks of known geometry.
 
@@ -425,18 +439,25 @@ monotonic transform of the same numbers — every threshold, blob and area is id
 either side of it. What adds information is changing where the light comes from, which
 is what the sweep does.)
 
-Two things this does not yet do, both measured:
+#### The surface stage measures the face, not the border
 
-- **Defects within 1.5mm of the card edge are unreliable.** On the clean card, which
-  has no damage at all, defect density runs 100x higher inside that band than outside
-  it (0.144% against 0.001%) — it is perspective-warp seam error, and it is what holds
-  an undamaged card at 9 instead of 10. The margin isn't widened because real creases
-  and whitening happen at exactly the card's edges, so excluding the band would hide
-  the defect that should cap the grade. Edge damage belongs to corners/edges.
-- **A short crease and a dent are hard to separate**, and that is a three-grade
-  difference. They differ only in elongation (1.96 against 1.24 on the one real card
-  measured). The honest distinction is whether the stock is broken, which needs the
-  back of the card to confirm.
+The outer **1.5mm** of the card is left to corners/edges. That is how the services
+divide their own sub-grades, and measuring the same strip in both double-counts it.
+
+It is also where the measurement is worst: straightening the card leaves a ridge of
+false relief hugging its boundary, and on a card with no damage at all the defect
+density inside that strip ran **100× the card's interior** (0.144% against 0.001%).
+After print suppression, the only three marks left on that clean card all sat at
+x = 0.7–0.8mm — every one an artifact, together costing it a grade.
+
+Nothing is lost. A crease at a corner is still found and still caps the card, through
+corners/edges: measured on a real creased corner, **24.2% wear against 0.00%** on the
+same corner undamaged.
+
+One limit remains: **a short crease and a dent are hard to separate**, and that is a
+three-grade difference. They differ only in elongation (1.96 against 1.24 on the one
+real card measured). The honest distinction is whether the stock is broken, which needs
+the back of the card to confirm.
 
 #### A defect caps the card, not the sub-grade
 

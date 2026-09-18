@@ -192,6 +192,24 @@ MIN_CREASE_ELONGATION = 1.8
 GLOSS_PENETRATION_DEPTH = 45.0
 DEEP_GOUGE_DEPTH = 70.0
 
+# How long a scratch has to be before it stops being a hairline, in
+# millimetres — regardless of how deep it is.
+#
+# Both published ladders separate scratches by extent as well as depth: TAG
+# allows "a light scratch" at 10 and "a longer scratch not penetrating the
+# gloss" at 9, and PSA separates a hairline (visible only at oblique angles,
+# capping at 9) from a visible scratch (readable under normal light, capping
+# at 7-8). Depth alone called a 12mm gouge cut with scissors a light scratch,
+# because a long shallow-angled cut disturbs the surface normal no more per
+# pixel than a hairline does — it just does it for far longer.
+#
+# 5mm is the point at which a mark stops being something you have to hunt for.
+# It is the weakest-supported number in this file: the rubrics describe
+# "longer" without giving a length, and the only cards measured against it are
+# one pair.
+VISIBLE_SCRATCH_LENGTH_MM = 5.0
+LONG_SCRATCH_LENGTH_MM = 15.0
+
 
 @dataclass
 class Defect:
@@ -240,11 +258,11 @@ def _classify(length_mm: float, width_mm: float, elongation: float, depth: float
         # is what the rubrics call a wrinkle rather than a crease.
         return "wrinkle", "wrinkle"
     if elongation >= MIN_SCRATCH_ELONGATION and width_mm <= MAX_SCRATCH_WIDTH_MM:
-        if depth >= DEEP_GOUGE_DEPTH:
-            return "scratch", "scratch_deep"    # cuts into the stock
-        if depth >= GLOSS_PENETRATION_DEPTH:
-            return "scratch", "scratch_gloss"   # penetrates the gloss
-        return "scratch", "scratch_light"       # sits in the gloss only
+        if depth >= DEEP_GOUGE_DEPTH or length_mm >= LONG_SCRATCH_LENGTH_MM:
+            return "scratch", "scratch_deep"    # cuts into the stock, or runs a long way
+        if depth >= GLOSS_PENETRATION_DEPTH or length_mm >= VISIBLE_SCRATCH_LENGTH_MM:
+            return "scratch", "scratch_gloss"   # visible without hunting for it
+        return "scratch", "scratch_light"       # a hairline
     if depth >= GLOSS_PENETRATION_DEPTH:
         return "dent", "dent"
     return "pit", "pit"

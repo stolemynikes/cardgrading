@@ -577,7 +577,9 @@ def ink_mask(albedo: np.ndarray, cfg: dict) -> np.ndarray:
     return cv2.dilate(mask, np.ones((dilate, dilate), np.uint8))
 
 
-def suppress_ink(relief: np.ndarray, albedo: np.ndarray, cfg: dict) -> np.ndarray:
+def suppress_ink(
+    relief: np.ndarray, albedo: np.ndarray, cfg: dict, percentile: float | None = None
+) -> np.ndarray:
     """Flatten the relief wherever the card is printed.
 
     Applied to the measured render and never to the displayed one. The
@@ -590,9 +592,20 @@ def suppress_ink(relief: np.ndarray, albedo: np.ndarray, cfg: dict) -> np.ndarra
     inside the art for the ability to compare two cards at all. Measured on
     one card clean and then damaged, it moved the pair from 6/6 (with the
     clean card reading *worse*) to 10 clean against 9 damaged.
+
+    `percentile` overrides how much is called ink, because the same signal
+    means different things in different places. In the card's interior,
+    relief that follows an albedo edge is print. At the border it is just as
+    likely to be *whitening* — exposed cardstock is a colour change as well
+    as a physical one — so suppressing as hard there deletes the defect being
+    looked for. Measured on a deliberately whitened edge, tightening the
+    interior setting from 88 to 84 took that edge from 1.21% wear to 0.15%
+    and handed the card back a clean edges grade.
     """
     if albedo is None:
         return relief
+    if percentile is not None:
+        cfg = {**cfg, "ink_gradient_percentile": percentile}
     out = relief.copy()
     out[ink_mask(albedo, cfg) > 0] = 128
     return out
@@ -671,8 +684,10 @@ def photometric_card_vision(
     relief = render(cfg.get("relief_gain", 1.0))
     albedo_u8 = np.clip(albedo * 255.0, 0, 255).astype(np.uint8)
     reference = cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)
-    measurement = suppress_ink(swept(reference), albedo_u8, cfg)
-    edge_measurement = suppress_ink(render(1.0, reference), albedo_u8, cfg)
+    measurement = _blank_border(suppress_ink(swept(reference), albedo_u8, cfg), cfg)
+    edge_measurement = suppress_ink(
+        render(1.0, reference), albedo_u8, cfg, cfg.get("ink_gradient_percentile_edges")
+    )
 
     return CardVisionResult(
         relief=relief,
@@ -736,6 +751,45 @@ def single_image_card_vision(image_bgr: np.ndarray, cfg: dict) -> CardVisionResu
         roughness_pct=_roughness_pct(measurement, cfg),
         measurement_relief=measurement,
     )
+
+
+# How far in from the card's edge the surface measurement starts, in
+# millimetres. This is the boundary between two attributes, not a filter.
+#
+# The surface stage measures the card's face; the corners and edges stage
+# measures its boundary. That is how the grading services divide their own
+# sub-grades, and measuring the same strip in both double-counts it.
+#
+# It also happens to be where the measurement is worst. Straightening the card
+# leaves a ridge of false relief hugging its boundary: on a card with no
+# damage at all, defect density inside this strip ran a hundred times the
+# density of the card's interior (0.144% against 0.001%), and the three marks
+# left on that card after print suppression all sat at x=0.7-0.8mm — every one
+# of them an artifact, together costing a clean card a grade.
+#
+# Nothing is lost by it. A crease at a corner is still found, and still caps
+# the card, through the corners and edges stage — measured on a real creased
+# corner, 24.2% wear against 0.00% on the same corner undamaged.
+SURFACE_EDGE_MARGIN_MM = 1.5
+
+
+def _blank_border(relief: np.ndarray, cfg: dict) -> np.ndarray:
+    """Flatten the strip the corners and edges stage owns."""
+    margin_mm = cfg.get("surface_edge_margin_mm", SURFACE_EDGE_MARGIN_MM)
+    if margin_mm <= 0:
+        return relief
+    from pipeline.dimensions import NOMINAL_WIDTH_MM
+
+    px_per_mm = relief.shape[1] / NOMINAL_WIDTH_MM
+    margin = int(round(margin_mm * px_per_mm))
+    if margin <= 0:
+        return relief
+    out = relief.copy()
+    out[:margin, :] = 128
+    out[-margin:, :] = 128
+    out[:, :margin] = 128
+    out[:, -margin:] = 128
+    return out
 
 
 def blank_warp_seam(relief: np.ndarray, cfg: dict) -> np.ndarray:

@@ -84,9 +84,13 @@ def _compare(marks) -> dict:
 #
 # Half grades round down throughout: the expensive error for a tool that
 # decides whether to pay for a submission is optimism.
-LIGHT_SCRATCH = (6.0, 0.2, 32, (30, 44), 0)
-GLOSS_SCRATCH = (6.0, 0.2, 55, (30, 44), 0)
-DEEP_GOUGE = (6.0, 0.2, 80, (30, 44), 0)
+# A hairline: shallow *and* short. Length matters on its own — TAG allows "a
+# light scratch" at 10 and "a longer scratch not penetrating the gloss" at 9,
+# and PSA separates a hairline from a scratch you can read under normal light.
+LIGHT_SCRATCH = (3.0, 0.2, 32, (30, 44), 0)
+GLOSS_SCRATCH = (3.0, 0.2, 55, (30, 44), 0)
+LONG_BUT_SHALLOW = (8.0, 0.2, 32, (30, 44), 0)
+DEEP_GOUGE = (3.0, 0.2, 80, (30, 44), 0)
 DENT = (1.5, 1.2, 80, (30, 44), 0)
 WRINKLE = (6.0, 1.4, 30, (30, 44), 0)
 MINOR_CREASE = (6.0, 1.4, 80, (30, 44), 0)
@@ -133,6 +137,13 @@ class TestTheCeilings:
     @pytest.mark.parametrize("grader,expected", [("psa", 7), ("tag", 8), ("cgc", 8)])
     def test_a_scratch_through_the_gloss(self, grader, expected):
         assert _grade([GLOSS_SCRATCH], grader).grade == expected
+
+    @pytest.mark.parametrize("grader,expected", [("psa", 7), ("tag", 8), ("cgc", 8)])
+    def test_length_alone_makes_a_scratch_visible(self, grader, expected):
+        """A long shallow-angled cut disturbs the surface normal no more per
+        pixel than a hairline — it just does it for far longer. Judging on
+        depth alone called a 12mm gouge cut with scissors a light scratch."""
+        assert _grade([LONG_BUT_SHALLOW], grader).grade == expected
 
     @pytest.mark.parametrize("grader,expected", [("psa", 5), ("tag", 5), ("cgc", 4)])
     def test_a_deep_gouge(self, grader, expected):

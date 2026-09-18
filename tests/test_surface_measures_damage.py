@@ -177,21 +177,20 @@ class TestNoDefectCanHideFromTheLight:
 
     def test_and_does_not_invent_damage_on_the_clean_card(self, measured):
         """The sweep maximises noise as well as signal, so the guard is that
-        the clean card's worst mark does not grow with it."""
+        the clean card stays clean under it."""
         clean = measured["clean"]["vision"]
-        swept = surface.relief_defect_stats(clean.measurement_relief, THRESHOLDS["surface"])[2]
-        single = surface.relief_defect_stats(clean.edge_relief, THRESHOLDS["surface"])[2]
-        assert abs(swept - single) <= 10, f"clean longest moved {single}px -> {swept}px"
+        area = surface.relief_defect_stats(clean.measurement_relief, THRESHOLDS["surface"])[0]
+        assert area < 0.05, f"an undamaged card measured {area:.3f}% of its face as defect"
 
-    def test_corners_and_edges_read_the_single_light_render(self, measured):
-        """Near the card's boundary the sweep maximises the warp seam, which
-        is most of what a corner crop contains: it took an undamaged card's
-        top-left corner from 0.00% wear to 11.89%, grading a clean card's
-        corners a 6. The two stages read different renders on purpose."""
-        from pipeline import corners_edges as ce
-
+    def test_the_surface_render_leaves_the_border_to_corners_and_edges(self, measured):
+        """The surface stage measures the card's face; the corners and edges
+        stage measures its boundary. Measuring the same strip in both
+        double-counts it — and that strip is where straightening the card
+        leaves false relief, which is what the three marks left on an
+        undamaged card after print suppression all were."""
         clean = measured["clean"]["vision"]
-        corner = (slice(0, 220), slice(0, 220))
-        swept_wear = ce.relief_wear_pct(clean.measurement_relief[corner], THRESHOLDS["corners_edges"])
-        single_wear = ce.relief_wear_pct(clean.edge_relief[corner], THRESHOLDS["corners_edges"])
-        assert swept_wear > single_wear, "documents why corners keep the single-light render"
+        margin = int(round(1.5 * clean.measurement_relief.shape[1] / 63.0))
+        border = clean.measurement_relief[:margin, :]
+        assert np.all(border == 128), "the surface render must be flat in the border strip"
+        # The corners/edges render keeps it, because that is what it measures.
+        assert not np.all(clean.edge_relief[:margin, :] == 128)
