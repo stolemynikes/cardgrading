@@ -189,7 +189,12 @@ def _surface_dings(side: str, side_data: dict) -> list[dict]:
         same_kind = sum(1 for d in defects if d.get("kind") == kind)
         if cap is not None and grade is not None and grade < cap and same_kind > 1:
             detail += f", and a further grade for being {same_kind} of them"
-        found.append(_ding("surface", side, kind, grade, detail, f"{side}_card_vision"))
+        # With a box the report can mark it on the card. "a 10mm scratch"
+        # without one tells nobody where to look, which is most of what a
+        # ding is for.
+        found.append(
+            _ding("surface", side, kind, grade, detail, f"{side}_card_vision", worst.get("box"))
+        )
         summary += f", worst is a {kind}"
 
     found.append(_ding("surface", side, "surface", grade, summary, f"{side}_card_vision"))

@@ -228,6 +228,11 @@ class Defect:
     depth: float
     area_px: int
     centre_mm: tuple[float, float]
+    # Where this mark sits on the card, [x, y, w, h] as fractions of the
+    # canonical warp — the same units the corner and edge crops use, so the
+    # report can draw it back onto the card. Without it a surface ding could
+    # say a scratch was 10mm long and never show anyone where to look.
+    box: list[float] | None = None
     grade_cap: int = 10  # filled in per grader by grade_surface
 
     def to_dict(self) -> dict:
@@ -239,6 +244,9 @@ class Defect:
             "depth": round(self.depth, 1),
             "area_px": int(self.area_px),
             "centre_mm": [round(self.centre_mm[0], 1), round(self.centre_mm[1], 1)],
+            # float(), not just round(): these come from numpy and the report
+            # is written to disk as JSON, which rejects numpy scalars outright.
+            "box": None if self.box is None else [round(float(v), 4) for v in self.box],
             "grade_cap": self.grade_cap,
         }
 
@@ -300,6 +308,7 @@ def classify_defects(relief: np.ndarray, cfg: dict, px_per_mm: float) -> list[De
     deviation = np.abs(relief.astype(np.int16) - 128).astype(np.uint8)
     _, mask = cv2.threshold(deviation, cfg["relief_defect_threshold"], 255, cv2.THRESH_BINARY)
     count, labels, stats, centroids = cv2.connectedComponentsWithStats(mask.astype(np.uint8), connectivity=8)
+    height, width = relief.shape[:2]
 
     min_area = cfg["min_defect_blob_area_px"]
     defects = []
@@ -332,6 +341,12 @@ def classify_defects(relief: np.ndarray, cfg: dict, px_per_mm: float) -> list[De
                 depth=depth,
                 area_px=int(stats[i, cv2.CC_STAT_AREA]),
                 centre_mm=(float(centroids[i][0]) / px_per_mm, float(centroids[i][1]) / px_per_mm),
+                box=[
+                    stats[i, cv2.CC_STAT_LEFT] / width,
+                    stats[i, cv2.CC_STAT_TOP] / height,
+                    stats[i, cv2.CC_STAT_WIDTH] / width,
+                    stats[i, cv2.CC_STAT_HEIGHT] / height,
+                ],
             )
         )
     return defects

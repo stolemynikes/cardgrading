@@ -364,3 +364,39 @@ def test_a_count_penalty_is_explained_not_left_as_a_contradiction():
     named = [d for d in dings.collect_dings(report) if d["attribute"] == "surface"][0]
     assert "caps this card at 5" in named["detail"]
     assert "2 of them" in named["detail"]
+
+
+def test_a_surface_ding_says_where_on_the_card_to_look():
+    """A ding exists to send someone to a place on the card. A surface ding
+    reading "10.2 x 0.1mm scratch" with no location left the defect map
+    showing an unmarked card, which is how a real damaged card came back
+    looking undamaged in the one view meant to show the damage."""
+    report = _report(
+        surface={
+            "front": {
+                "grade": 7, "defect_area_pct": 0.14, "defect_count": 73, "longest_defect_px": 291,
+                "limited_by": "scratch",
+                "defects": [{"kind": "scratch", "length_mm": 10.2, "width_mm": 0.1,
+                             "centre_mm": [15.0, 55.0], "grade_cap": 7,
+                             "box": [0.18, 0.58, 0.16, 0.02]}],
+            },
+        }
+    )
+    named = [d for d in dings.collect_dings(report) if d["attribute"] == "surface"][0]
+    assert named["box"] == [0.18, 0.58, 0.16, 0.02]
+
+
+def test_a_surface_ding_without_a_box_still_works():
+    """Reports saved before defects carried a box."""
+    report = _report(
+        surface={
+            "front": {
+                "grade": 7, "defect_area_pct": 0.14, "defect_count": 73, "longest_defect_px": 291,
+                "limited_by": "scratch",
+                "defects": [{"kind": "scratch", "length_mm": 10.2, "width_mm": 0.1,
+                             "centre_mm": [15.0, 55.0], "grade_cap": 7}],
+            },
+        }
+    )
+    named = [d for d in dings.collect_dings(report) if d["attribute"] == "surface"][0]
+    assert named["box"] is None

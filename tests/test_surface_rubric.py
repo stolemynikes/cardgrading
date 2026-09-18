@@ -279,3 +279,20 @@ class TestTheReport:
         assert graded.grade is None
         assert graded.limited_by is None
         assert graded.to_dict()["defect_kinds"]["crease"] == 1
+
+
+def test_a_defect_survives_being_written_to_disk():
+    """The report is stored as JSON, and json.dumps rejects numpy scalars
+    outright. Blob statistics come straight from numpy, so a defect that
+    hasn't been cast takes the whole report down at save time — after the
+    grading work is already done."""
+    import json as _json
+
+    relief = _card([MINOR_CREASE])
+    defects = surface.classify_defects(relief, CFG, PX_PER_MM)
+    assert defects, "fixture must produce at least one defect"
+    payload = [d.to_dict() for d in defects]
+    _json.dumps(payload)                      # must not raise
+    for value in payload[0]["box"]:
+        assert type(value) is float, f"box carries a {type(value).__name__}, not a float"
+    assert type(payload[0]["area_px"]) is int

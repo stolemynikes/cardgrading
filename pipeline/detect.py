@@ -155,15 +155,35 @@ def _nearest_color_distance(pixels: np.ndarray, colors: np.ndarray) -> np.ndarra
     return dist
 
 
-# Candidate-quad generation and scoring, tuned against real misdetections:
-# on a busy/textured background, Otsu picks a threshold low enough that the
-# card merges with background patches into one giant blob — the old
-# "largest contour wins" rule then boxed card+background together. Sweeping
-# a few higher thresholds re-isolates the card, and scoring every candidate
-# by card-likeness picks it out.
+# Candidate-quad generation and scoring, tuned against real misdetections.
+#
+# Otsu alone fails in both directions, so the sweep goes both ways.
+#
+# Too low: on a busy or textured background Otsu picks a threshold that merges
+# the card with background patches into one giant blob, and the old "largest
+# contour wins" rule then boxed card and background together. The multipliers
+# above 1.0 re-isolate the card.
+#
+# Too high: a dark card on a dark background. Measured on a real Pokemon card
+# back — deep blue border, scanned on black card stock — the distances from
+# the sampled background colour came out
+#
+#     background      9
+#     blue border    35     <- the card's actual edge
+#     artwork       235
+#     Otsu cut      104     <- above the border, so the border reads as background
+#
+# and the detector confidently returned the *artwork* as the card: 56.55 x
+# 81.33mm for a 63 x 88mm card, a warp cropped inside the card's own border
+# with no edges in it at all. The multipliers below 1.0 exist for that, and
+# they have to reach well down — 0.4 was tried first and still sat at 41,
+# above the border's 35. At 0.2 the same scan measures 63.36 x 88.62mm.
+#
+# Extra thresholds only add candidates; the card-likeness scoring still
+# decides, so a case that already worked cannot be made worse by them.
 CARD_ASPECT = 63.0 / 88.0
 MIN_CANDIDATE_AREA_FRAC = 0.05
-THRESHOLD_MULTIPLIERS = (1.0, 1.5, 2.0, 2.5)
+THRESHOLD_MULTIPLIERS = (0.15, 0.2, 0.3, 0.5, 1.0, 1.5, 2.0, 2.5)
 
 
 def _quads_from_contour(contour: np.ndarray) -> list[np.ndarray]:
