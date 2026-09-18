@@ -770,6 +770,33 @@ def single_image_card_vision(image_bgr: np.ndarray, cfg: dict) -> CardVisionResu
 # Nothing is lost by it. A crease at a corner is still found, and still caps
 # the card, through the corners and edges stage — measured on a real creased
 # corner, 24.2% wear against 0.00% on the same corner undamaged.
+#
+# Why 1.0mm and not less. Two separate things go wrong at a card's edge, and
+# they have different widths:
+#
+#   pixel mixing      the outermost pixels blend card and background. Measured
+#                     two independent ways that agree: the photometric fit
+#                     residual jumps to 7.5-8.8% inside 0.3mm against 0.35% in
+#                     the card's interior, and stacking the four registered
+#                     frames locates the card's true edge 0.32mm in from where
+#                     the quad cuts. So this part is ~0.3mm.
+#
+#   frames disagreeing about where the edge is
+#                     the bigger problem. Stacking the frames of one real card
+#                     put its top edge at row 3 in two scans and row 27 in the
+#                     other two — a full millimetre apart, and those two were
+#                     the landscape scans, carrying this scanner's ~3% size
+#                     difference between portrait and landscape placement.
+#
+# Narrowing this to 1.0mm was tried and reverted. It gave grades identical to
+# 1.5mm on the validation pair, which looked like a free 2.6% more card — but
+# rendered and looked at, the strip it re-admits carries visible boundary
+# striping, and on the *undamaged* card that strip measures 0.21% of its
+# pixels over the defect threshold against 0.02% in the card's interior. Ten
+# times dirtier. The grades held by luck on one pair, not by safety.
+#
+# The route to going narrower is fixing the second problem above — the frames
+# disagreeing about where the edge is — not this constant.
 SURFACE_EDGE_MARGIN_MM = 1.5
 
 
