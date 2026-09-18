@@ -186,3 +186,36 @@ class TestDeviationsAreAlsoReportedAsProportions:
         result = dimensions.measure_dimensions(None, None, self.THRESHOLDS).to_dict()
         assert result["width_deviation_pct"] is None
         assert result["height_deviation_pct"] is None
+
+
+class TestBothSidesAreMeasurements:
+    """A card has one physical size, so the back is another measurement of it.
+
+    Measuring the front alone cost a real capture its verdict: a front scan
+    that clipped the card measured it at 56.77 x 79.48mm while the back of the
+    same card measured 63.06 x 88.27mm, and only the front was consulted.
+    """
+
+    THRESHOLDS = {"dimensions": {"tolerance_mm": 0.75, "squareness_tolerance_deg": 1.0}}
+
+    @staticmethod
+    def _quad(width_mm: float, height_mm: float, dpi: float = 1200.0) -> np.ndarray:
+        w = width_mm / dimensions.MM_PER_INCH * dpi
+        h = height_mm / dimensions.MM_PER_INCH * dpi
+        return np.array([[0, 0], [w, 0], [w, h], [0, h]], dtype=np.float32)
+
+    def test_one_bad_scan_among_several_is_outvoted(self):
+        good = [self._quad(63.0, 88.0) for _ in range(4)]
+        clipped = self._quad(56.8, 79.5)
+        result = dimensions.measure_from_scans(good + [clipped], 1200.0, self.THRESHOLDS)
+        assert result.sample_count == 5
+        assert result.width_mm == pytest.approx(63.0, abs=0.1), "the median should ignore the outlier"
+
+    def test_two_scans_that_disagree_give_no_verdict(self):
+        """What the real capture should have said, and now does: one good
+        measurement and one clipped one cannot settle anything."""
+        result = dimensions.measure_from_scans(
+            [self._quad(63.0, 88.0), self._quad(56.8, 79.5)], 1200.0, self.THRESHOLDS
+        )
+        assert result.within_tolerance is None
+        assert "disagree" in result.note

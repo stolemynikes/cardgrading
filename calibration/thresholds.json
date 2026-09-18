@@ -688,14 +688,7 @@
     }
   },
   "surface": {
-    "laplacian_ksize": 3,
-    "dog_sigma1": 1.0,
-    "dog_sigma2": 2.0,
-    "defect_score_threshold": 15,
     "min_defect_blob_area_px": 10,
-    "holo_saturation_variance_threshold": 300,
-    "holo_local_variance_threshold": 400,
-    "holo_mask_dilate_px": 7,
     "physical_edge_margin_px": 3,
     "relief_defect_threshold": 26,
     "grade_bands": [
@@ -738,20 +731,6 @@
       [
         100.0,
         1
-      ]
-    ],
-    "scratch_length_caps": [
-      [
-        400,
-        8
-      ],
-      [
-        800,
-        7
-      ],
-      [
-        1300,
-        6
       ]
     ],
     "primary_grader": "psa",

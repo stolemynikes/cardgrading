@@ -65,6 +65,13 @@ the card and background into one blob, which the old "largest contour wins" rule
 would then grade as if it were the card.
 
 ### Stage 1.5 — Dimensions (`pipeline/dimensions.py`)
+Measured from **every detected quad on both sides**, not the front alone. A card has one
+physical size, so the back is another measurement of the same thing — and measuring the
+front alone cost a real capture its verdict: a front scan that clipped the card measured
+it at 56.77 x 79.48mm while the back of that same card measured 63.06 x 88.27mm, and
+only the front was ever consulted. More samples also make the spread mean something,
+and the spread is what decides whether a verdict is given at all.
+
 Measures the card's real physical size in millimetres against the 63×88mm nominal,
 catching miscuts, diamond cuts and trimming — defects of the card itself rather than
 of its condition, which is why a card outside tolerance is capped at grade 8 no

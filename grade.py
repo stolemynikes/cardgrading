@@ -586,8 +586,19 @@ def grade_card(
     # than the tolerance on this hardware. Resting the verdict on whichever
     # scan happened to be the flat capture made the same card read '2.13mm
     # miscut' one run and 'within tolerance' the next.
-    front_quads = [front_result.contour] + list(getattr(front_vision, "scan_quads", None) or [])
-    front_dimensions = dimensions.measure_from_scans(front_quads, dpi, thresholds)
+    # Every detected quad, from both sides. A card has one physical size, so
+    # the back is another measurement of the same thing — and throwing it away
+    # cost a real capture its verdict: a clipped front scan measured the card
+    # at 56.77 x 79.48mm while the back of the same card measured 63.06 x
+    # 88.27mm, and only the front was ever consulted. More samples also make
+    # the spread mean something, which is what decides whether a verdict is
+    # given at all.
+    quads = (
+        [front_result.contour, back_result.contour]
+        + list(getattr(front_vision, "scan_quads", None) or [])
+        + list(getattr(back_vision, "scan_quads", None) or [])
+    )
+    front_dimensions = dimensions.measure_from_scans(quads, dpi, thresholds)
     report["dimensions"] = front_dimensions.to_dict()
     _log(verbose, "\n[dimensions]")
     if front_dimensions.measurable:

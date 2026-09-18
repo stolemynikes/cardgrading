@@ -293,9 +293,6 @@ def _grade_from_pct(pct: float, grade_bands: list[dict]) -> int:
     return max(1, grade_bands[-1]["grade"] - 2)
 
 
-# Kept under the old name: it is referenced from calibration scripts.
-_grade_from_whitening = _grade_from_pct
-
 
 def _border_uniformity(crop_bgr: np.ndarray) -> float:
     """How close this crop is to a single flat colour.
@@ -462,7 +459,7 @@ def analyze_region(
 
     total_area = mask.shape[0] * mask.shape[1]
     whitening_pct = 100.0 * whitening_area / total_area if total_area else 0.0
-    grade = _grade_from_whitening(whitening_pct, cfg["grade_bands"])
+    grade = _grade_from_pct(whitening_pct, cfg["grade_bands"])
     # Two independent readings of the same corner, and the worse one wins.
     # They fail in opposite directions: whitening is blind to a light border,
     # relief is blind to a stain that hasn't deformed anything.
