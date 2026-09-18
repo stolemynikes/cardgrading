@@ -195,6 +195,33 @@ uses the measurable side(s), or excludes centering entirely. Before this check, 
 real full-art promo produced a confident-looking "89/11 grade 3" from pure noise —
 which also collapsed the Stage 3 crop sizes to meaningless 12×12 patches.
 
+#### Refusing an axis whose "border" isn't one
+
+One physical card, scanned twice on the same scanner at the same settings, measured
+**19/81 on one pass and 67/33 on the other** — reporting centering grade 5 and grade 8
+for a card whose centering had not changed between them.
+
+Both readings arrived carrying a `variation_px` saying the sample bands disagreed: 159px
+and 99px of wander along sides whose borders were 52px and 77px wide. The figure was
+recorded and nothing acted on it.
+
+A printed border edge is a straight line parallel to the card edge, so on a card whose
+border the detector really found, that wander is near zero. Measured: synthetic cards
+with straight printed borders run **0.00–0.03** of the border width, including one cut
+deliberately off-centre; the real card ran **0.74–3.06**. Two orders of magnitude, which
+is what makes `max_boundary_wander` safe to set at 0.5 — comfortably above a real
+straight border, comfortably below a boundary that isn't one, and still permitting the
+genuinely skewed cut that `variation_px` was added to catch.
+
+Note this is a *different* failure from a wavy boundary, which was already handled: a
+wavy edge weakens every band's confidence and the axis is refused on that. What got
+through was a card where each band found a strong, straight edge and the bands
+disagreed about *which* edge — a title bar and an art panel at different insets, so the
+samples were individually confident and collectively meaningless.
+
+A refused axis keeps its numbers and states its reason, because those are what let a
+reader see why, and what the manual overlay seeds its lines from.
+
 #### Measuring at the worst point, and placing it by hand
 
 PSA grades "the percent of difference at the most off-center part of the card" — a

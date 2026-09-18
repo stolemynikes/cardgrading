@@ -556,7 +556,8 @@
         ],
         "source": "third-party transcription"
       }
-    }
+    },
+    "max_boundary_wander": 0.5
   },
   "corners_edges": {
     "corner_crop_px": 150,

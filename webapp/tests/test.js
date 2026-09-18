@@ -148,6 +148,34 @@ function assert(cond, message) {
   assert(content.includes("caps at 4"), "and the ceiling that defect carries");
 }
 
+// --- Test 1c2: a refused centering axis says why it was refused. "n/a" reads
+// the same whether the card has no border to find or the detector found
+// something that isn't one — and only the second is worth dragging lines over.
+{
+  const dom = makeDom();
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "success_result.json"), "utf8"));
+  const report = JSON.parse(JSON.stringify(data.report));
+  report.centering.front.vertical = {
+    ...report.centering.front.vertical,
+    measurable: false,
+    variation_px: 159.0,
+    reason: "the top/bottom boundary wanders 159px along the side, 3.1x the 52px border it would be measuring — a printed border edge is straight, so this is tracking artwork rather than the border. Place the boundaries by hand to grade this axis.",
+  };
+  dom.window.handleReport(report, data.images);
+  const content = dom.window.document.getElementById("report-content").innerHTML;
+  assert(content.includes("wanders 159px"), "the refusal reason is shown, not a bare n/a");
+  assert(content.includes("by hand"), "and points at the manual adjustment");
+
+  // Older reports carry no reason and must fall back to the generic wording.
+  const older = JSON.parse(JSON.stringify(data.report));
+  older.centering.front.vertical = { ...older.centering.front.vertical, measurable: false };
+  dom.window.handleReport(older, data.images);
+  assert(
+    dom.window.document.getElementById("report-content").innerHTML.includes("boundary not visible"),
+    "an older refused axis still explains itself"
+  );
+}
+
 // --- Test 1d2: a corner tile shows whichever of the two readings actually
 // set its grade, and names both. Whitening is blind on a neutral border and
 // relief is blind to a stain that hasn't deformed anything.

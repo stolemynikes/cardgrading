@@ -37,6 +37,53 @@ class AxisCentering:
     # straight cut holds steady; a card cut out of square does not, and PSA
     # grades "the most off-center part of the card", not the average of it.
     variation_px: float = 0.0
+    # Why the axis was refused, in the report's own words. "unmeasurable"
+    # alone reads the same whether the card has no border to find or the
+    # detector found something that isn't a border, and those want different
+    # things done about them — the second is what the manual adjustment is for.
+    reason: str | None = None
+
+
+# How far the detected border boundary may wander along a side before the
+# axis stops being a measurement, as a multiple of the narrower border.
+#
+# A printed border edge is a straight line parallel to the card edge, so on a
+# card whose border the detector really found, this is near zero: synthetic
+# cards with straight printed borders measure 0.00-0.03, including one cut
+# deliberately off-centre. On a real silver-bordered card where the detector
+# was locking onto internal artwork instead, the same figure ran 0.74 to 3.06
+# — the boundary moving by three times the width of the border it claimed to
+# have found.
+#
+# That card is why this exists. Scanned twice, it measured 19/81 on one pass
+# and 67/33 on the other, and reported grade 5 and grade 8 for one physical
+# card whose centering had not changed. Both numbers came with a variation
+# figure that said the samples disagreed; nothing acted on it.
+#
+# Set well above the noise of a real straight border and well below a
+# boundary that isn't one. A genuinely skewed cut — the case variation_px was
+# added to catch — should still measure and still grade: it wanders, but by a
+# fraction of the border, not by multiples of it.
+MAX_BOUNDARY_WANDER = 0.5
+
+
+def _refuse_if_boundary_wanders(axis: AxisCentering, max_wander: float) -> None:
+    """Drop an axis whose "border" isn't straight enough to be one."""
+    if not axis.measurable:
+        return
+    narrower = min(axis.side_a_px, axis.side_b_px)
+    if narrower <= 0:
+        return
+    wander = axis.variation_px / narrower
+    if wander <= max_wander:
+        return
+    axis.measurable = False
+    axis.reason = (
+        f"the {axis.side_a}/{axis.side_b} boundary wanders {axis.variation_px:.0f}px along the side, "
+        f"{wander:.1f}x the {narrower:.0f}px border it would be measuring — a printed border edge is "
+        "straight, so this is tracking artwork rather than the border. Place the boundaries by hand "
+        "to grade this axis."
+    )
 
 
 def axis_dict(a: AxisCentering) -> dict:
@@ -57,6 +104,7 @@ def axis_dict(a: AxisCentering) -> dict:
         "leeway_applied": a.leeway_applied,
         "variation_px": round(a.variation_px, 1),
         "measurable": a.measurable,
+        "reason": a.reason,
     }
 
 
@@ -551,6 +599,8 @@ def measure_centering(front: np.ndarray, back: np.ndarray, thresholds: dict) -> 
     leeway = float(cfg.get("front_leeway_points", 0.0))
     leeway_min = float(cfg.get("leeway_min_grade", 7.0))
 
+    max_wander = float(cfg.get("max_boundary_wander", MAX_BOUNDARY_WANDER))
+
     def side(hpx, vpx, h_ok, v_ok, tolerances, variation, leeway_points):
         axis_h = _axis_centering("left", "right", *hpx, tolerances, leeway_points, leeway_min)
         axis_h.measurable = h_ok
@@ -558,6 +608,8 @@ def measure_centering(front: np.ndarray, back: np.ndarray, thresholds: dict) -> 
         axis_v = _axis_centering("top", "bottom", *vpx, tolerances, leeway_points, leeway_min)
         axis_v.measurable = v_ok
         axis_v.variation_px = max(variation["top"], variation["bottom"])
+        for axis in (axis_h, axis_v):
+            _refuse_if_boundary_wanders(axis, max_wander)
         grades = [a.grade for a in (axis_h, axis_v) if a.measurable]
         return axis_h, axis_v, (min(grades) if grades else None)
 

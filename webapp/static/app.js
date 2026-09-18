@@ -1867,7 +1867,9 @@ function centeringSideHTML(label, sideData, overlayImg, knownFullArt = false) {
     ok
       ? `<div class="axis-row"><span class="axis-label">${labelChar}</span><span class="mono" title="${escapeHtml(axis.ratio_conventional || axis.ratio)} in the larger-first convention PSA prints">${escapeHtml(axis.ratio)}</span>
       <span class="grade-pill-sm">g${axis.grade}</span>${isWorse ? ding : ""}${leewayNote(axis)}${wanderNote(axis)}</div>`
-      : `<div class="axis-row"><span class="axis-label">${labelChar}</span><span class="muted">n/a — boundary not visible in this capture</span></div>`;
+      : `<div class="axis-row"><span class="axis-label">${labelChar}</span><span class="muted">n/a — ${escapeHtml(
+          axis.reason || "boundary not visible in this capture"
+        )}</span></div>`;
   return `<div class="centering-card">
     <div class="centering-card-header">${label}
       ${sideData.manual ? `<span class="manual-chip" title="Boundaries placed by hand, not detected">set by hand</span>` : ""}
