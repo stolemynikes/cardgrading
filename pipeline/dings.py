@@ -45,6 +45,25 @@ def _ding(attribute: str, side: str, label: str, grade, detail: str, image_key: 
     }
 
 
+def _region_detail(region: dict) -> str:
+    """Say which reading actually found the damage.
+
+    A corner is graded from two independent measurements — whitening, and
+    physical deformation read from the photometric relief — and the worse one
+    sets the grade. Quoting only the whitening figure is how a corner graded 3
+    came to report "0.00% whitening, 0 blob(s)": that reading is blind on a
+    neutral border, and the relief that saw the damage went unmentioned.
+    """
+    whitening = region.get("whitening_pct") or 0.0
+    wear = region.get("relief_wear_pct")
+    parts = []
+    if wear is not None and wear >= whitening:
+        parts.append(f"{wear:.2f}% of the region is physically deformed")
+    if whitening > 0 or wear is None:
+        parts.append(f"{whitening:.2f}% whitening, {region.get('blob_count', 0)} blob(s)")
+    return " · ".join(parts)
+
+
 def _corners_edges_dings(side: str, side_data: dict) -> list[dict]:
     """The worst-scoring corner(s)/edge(s) on this side — those are what set
     the side's sub-grade, since the region grades combine by minimum."""
@@ -75,7 +94,7 @@ def _corners_edges_dings(side: str, side_data: dict) -> list[dict]:
                     side,
                     labels.get(key, key),
                     region["grade"],
-                    f"{region['whitening_pct']:.2f}% whitening, {region['blob_count']} blob(s)",
+                    _region_detail(region),
                     f"{side}_{image_prefix}{key}",
                     region.get("box"),
                 )
@@ -139,10 +158,42 @@ def _surface_dings(side: str, side_data: dict) -> list[dict]:
 
     count = side_data.get("defect_count", 0)
     area = side_data.get("defect_area_pct", 0.0)
-    longest = side_data.get("longest_defect_px", 0)
-    detail = f"{area:.2f}% of the surface, {count} defect(s), longest {longest}px"
+    summary = f"{area:.2f}% of the surface, {count} defect(s)"
 
-    return [_ding("surface", side, "surface", grade, detail, f"{side}_card_vision")]
+    # The named mark that capped the grade gets its own entry, because that is
+    # the thing to go and look at. A card graded 4 whose ding says only "0.15%
+    # of the surface" tells nobody that it has a crease in the bottom-left
+    # corner — and the crease is the entire reason for the grade.
+    found = []
+    limited_by = side_data.get("limited_by")
+    defects = side_data.get("defects") or []
+    # Lowest ceiling first, then largest — two marks of the same kind cap the
+    # card equally, and the one worth walking over to look at is the bigger.
+    worst = min(
+        defects,
+        key=lambda d: (d.get("grade_cap", 10), -d.get("length_mm", 0.0) * d.get("width_mm", 0.0)),
+        default=None,
+    )
+    if worst is not None and limited_by and limited_by != "overall surface wear":
+        x, y = worst.get("centre_mm", [0, 0])
+        kind = worst.get("kind", "surface")
+        cap = worst.get("grade_cap")
+        detail = (
+            f"{worst.get('length_mm', 0):.1f} x {worst.get('width_mm', 0):.1f}mm at "
+            f"{x:.0f}, {y:.0f}mm from the top-left corner — caps this card at {cap}"
+        )
+        # Some standards count as well as classify, so the card can sit a
+        # grade below what any single mark would allow. Saying "caps this card
+        # at 5" beside a grade of 4 reads as a contradiction unless the reason
+        # is given.
+        same_kind = sum(1 for d in defects if d.get("kind") == kind)
+        if cap is not None and grade is not None and grade < cap and same_kind > 1:
+            detail += f", and a further grade for being {same_kind} of them"
+        found.append(_ding("surface", side, kind, grade, detail, f"{side}_card_vision"))
+        summary += f", worst is a {kind}"
+
+    found.append(_ding("surface", side, "surface", grade, summary, f"{side}_card_vision"))
+    return found
 
 
 def _dimensions_dings(dimensions: dict | None) -> list[dict]:

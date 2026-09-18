@@ -655,7 +655,13 @@ def grade_card(
     def _wear_relief(vision):
         if vision is None or vision.method != "photometric_stereo":
             return None
-        return vision.measurement_relief if vision.measurement_relief is not None else vision.relief
+        # edge_relief, not measurement_relief: the swept render maximises the
+        # warp-seam artifact along with the damage, and a corner crop is mostly
+        # seam. See CardVisionResult.edge_relief.
+        for candidate in (vision.edge_relief, vision.measurement_relief, vision.relief):
+            if candidate is not None:
+                return candidate
+        return None
 
     ce_result, ce_overlays = corners_edges.analyze_corners_edges(
         front_result.warped, back_result.warped, front_borders, back_borders, thresholds,

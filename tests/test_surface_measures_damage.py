@@ -145,3 +145,53 @@ def test_both_sets_solved_photometrically(measured):
     for name in ("clean", "damaged"):
         assert measured[name]["vision"].method == "photometric_stereo"
         assert measured[name]["vision"].light_count == 4
+
+
+class TestNoDefectCanHideFromTheLight:
+    """A virtual light casts no shadow along a defect running parallel to it.
+
+    Measured on the damaged card by sweeping the light over one solved set of
+    normals, changing nothing else: the longest defect moved from 58px at 180
+    degrees to 281px at 90 degrees. The longest defect is a grading input, so
+    a fixed azimuth made the grade depend on an arbitrary choice.
+
+    The measured render is therefore taken at its worst over four lights at
+    right angles — the same thing a grader does turning a card under a lamp.
+    """
+
+    def test_the_measured_render_is_not_a_single_light(self, measured):
+        """The property, checked directly: the measurement must not be
+        reproducible by any one azimuth, because that is what it isn't."""
+        import cv2
+
+        vision = measured["damaged"]["vision"]
+        assert vision.measurement_relief is not None
+        assert vision.edge_relief is not None
+        assert not np.array_equal(vision.measurement_relief, vision.edge_relief)
+
+    def test_it_finds_more_of_the_scratch_than_one_light_does(self, measured):
+        damaged = measured["damaged"]["vision"]
+        swept = surface.relief_defect_stats(damaged.measurement_relief, THRESHOLDS["surface"])[2]
+        single = surface.relief_defect_stats(damaged.edge_relief, THRESHOLDS["surface"])[2]
+        assert swept > single, f"swept {swept}px should exceed single-light {single}px"
+
+    def test_and_does_not_invent_damage_on_the_clean_card(self, measured):
+        """The sweep maximises noise as well as signal, so the guard is that
+        the clean card's worst mark does not grow with it."""
+        clean = measured["clean"]["vision"]
+        swept = surface.relief_defect_stats(clean.measurement_relief, THRESHOLDS["surface"])[2]
+        single = surface.relief_defect_stats(clean.edge_relief, THRESHOLDS["surface"])[2]
+        assert abs(swept - single) <= 10, f"clean longest moved {single}px -> {swept}px"
+
+    def test_corners_and_edges_read_the_single_light_render(self, measured):
+        """Near the card's boundary the sweep maximises the warp seam, which
+        is most of what a corner crop contains: it took an undamaged card's
+        top-left corner from 0.00% wear to 11.89%, grading a clean card's
+        corners a 6. The two stages read different renders on purpose."""
+        from pipeline import corners_edges as ce
+
+        clean = measured["clean"]["vision"]
+        corner = (slice(0, 220), slice(0, 220))
+        swept_wear = ce.relief_wear_pct(clean.measurement_relief[corner], THRESHOLDS["corners_edges"])
+        single_wear = ce.relief_wear_pct(clean.edge_relief[corner], THRESHOLDS["corners_edges"])
+        assert swept_wear > single_wear, "documents why corners keep the single-light render"

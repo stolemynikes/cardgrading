@@ -37,6 +37,20 @@ DEFAULT_ELEVATION_DEG = 70.0
 # that neither purely horizontal nor purely vertical scratches disappear
 # into the shading direction.
 RENDER_AZIMUTH_DEG = 315.0
+
+# The azimuths the *measured* render is swept over, in degrees.
+#
+# A virtual light casts no shadow along a defect that runs parallel to it, so
+# a single fixed azimuth has a blind direction. Measured on one damaged card,
+# sweeping the light over the same solved normals moved the longest defect
+# from 58px to 281px depending only on where the light was put — and the
+# longest defect is a grading input. A grade that depends on an arbitrary
+# choice of light direction is not a measurement.
+#
+# Four lights at right angles, kept per pixel at their worst, is the same
+# thing a grader does with a real card: turn it under the lamp and keep what
+# you saw. Nothing can then hide from every light at once.
+MEASUREMENT_AZIMUTHS_DEG = (0.0, 90.0, 180.0, 270.0)
 RENDER_ELEVATION_DEG = 35.0
 
 
@@ -77,6 +91,16 @@ class CardVisionResult:
     # The detected card quad from each rotation scan, for the dimensions
     # stage. Not serialized — these are measurement inputs, not report data.
     scan_quads: list | None = None
+    # The single-light measured render, for the corners and edges.
+    #
+    # Sweeping the light maximises noise along with signal, and near the card's
+    # physical boundary the noise is the perspective-warp seam, which is most
+    # of what a corner crop contains. Measured: sweeping took an undamaged
+    # card's top-left corner from 0.00% wear to 11.89%, which would have graded
+    # a clean card's corners a 6. In the card's interior the signal dominates
+    # and the sweep is the better measurement; at the edges it is not, so the
+    # two stages read different renders and each says why.
+    edge_relief: np.ndarray | None = None
     # The same relief rendered at unit gain. `relief` is the picture, and its
     # gain is a viewing preference; this is what gets measured. Without the
     # split, turning the render up to taste doubled the card's measured defect
@@ -624,6 +648,15 @@ def photometric_card_vision(
             shade_normals(normals, RENDER_AZIMUTH_DEG, RENDER_ELEVATION_DEG, gain, reference), cfg
         )
 
+    def swept(reference: float) -> np.ndarray:
+        """The card under every light at once, kept at its worst per pixel."""
+        worst = None
+        for azimuth in cfg.get("measurement_azimuths_deg", MEASUREMENT_AZIMUTHS_DEG):
+            lit = shade_normals(normals, azimuth, RENDER_ELEVATION_DEG, 1.0, reference)
+            deviation = np.abs(lit.astype(np.int16) - 128)
+            worst = deviation if worst is None else np.maximum(worst, deviation)
+        return blank_warp_seam(np.clip(128 + worst, 0, 255).astype(np.uint8), cfg)
+
     # The picture autoscales so every card fills the range and is worth
     # looking at. The measurement does not: it is rendered at unit gain
     # against a fixed absolute reference, so a given physical relief maps to
@@ -631,13 +664,15 @@ def photometric_card_vision(
     # mean one fixed thing. Sharing one autoscaled render between the two —
     # which is what this did — made every surface number relative to the
     # card's own worst feature.
+    # The picture is lit from one direction, because that is what a lit surface
+    # looks like and a render averaged over four lights reads flat. The
+    # measurement is swept, because a fixed light has a blind direction and the
+    # grade must not depend on which one was picked.
     relief = render(cfg.get("relief_gain", 1.0))
     albedo_u8 = np.clip(albedo * 255.0, 0, 255).astype(np.uint8)
-    measurement = suppress_ink(
-        render(1.0, cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)),
-        albedo_u8,
-        cfg,
-    )
+    reference = cfg.get("measurement_reference_deviation", MEASUREMENT_REFERENCE_DEVIATION)
+    measurement = suppress_ink(swept(reference), albedo_u8, cfg)
+    edge_measurement = suppress_ink(render(1.0, reference), albedo_u8, cfg)
 
     return CardVisionResult(
         relief=relief,
@@ -648,6 +683,7 @@ def photometric_card_vision(
         roughness_pct=_roughness_pct(measurement, cfg),
         registration=registration,
         measurement_relief=measurement,
+        edge_relief=edge_measurement,
     )
 
 

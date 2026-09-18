@@ -396,6 +396,35 @@ the crease actually is.
 `tests/test_surface_measures_damage.py` holds the pair; `tests/test_surface_rubric.py`
 holds the ladder against synthetic marks of known geometry.
 
+#### No defect may hide from the light
+
+A virtual light casts no shadow along a defect that runs parallel to it, so a single
+fixed render azimuth has a blind direction. Measured on the damaged card by sweeping the
+light over one solved set of normals and changing nothing else:
+
+| azimuth | defect area | longest defect |
+|---|---|---|
+| 90° | 0.176% | **281 px** |
+| 180° | 0.104% | **58 px** |
+
+The longest defect is a grading input, so a fixed azimuth made the grade depend on an
+arbitrary choice. The measured render is now taken at its **worst per pixel over four
+lights at right angles** — which is what a grader does with a real card: turn it under
+the lamp and keep what you saw. On the damaged card the gouge goes 214 px → 291 px; on
+the clean card the longest mark is unchanged at 61 px.
+
+Corners and edges deliberately keep the **single-light** render. The sweep maximises
+noise along with signal, and near the card's physical boundary the noise is the
+perspective-warp seam, which is most of what a corner crop contains: sweeping took an
+undamaged card's top-left corner from 0.00% wear to 11.89%, which would have graded a
+clean card's corners a **6**. In the interior the signal dominates and the sweep is the
+better measurement; at the edges it is not.
+
+(For completeness, since it comes up: **inverting the render adds nothing.** It is a
+monotonic transform of the same numbers — every threshold, blob and area is identical
+either side of it. What adds information is changing where the light comes from, which
+is what the sweep does.)
+
 Two things this does not yet do, both measured:
 
 - **Defects within 1.5mm of the card edge are unreliable.** On the clean card, which
