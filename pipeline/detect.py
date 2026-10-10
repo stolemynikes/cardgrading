@@ -218,6 +218,41 @@ def _card_likeness_penalty(quad: np.ndarray, contour: np.ndarray, area_frac: flo
     return aspect_dev * 3.0 + tilt * 1.0 + (1.0 - min(solidity, 1.0)) * 1.0 - min(area_frac, 0.5) * 0.2
 
 
+# How close to the image border a quad edge has to run to count as touching
+# it, in pixels.
+FRAME_TOUCH_PX = 3
+
+
+def _is_the_frame(quad: np.ndarray, shape: tuple) -> bool:
+    """Is this candidate the scan itself rather than something in it?
+
+    A card is, by construction, surrounded by background — the background
+    colour is sampled from the image corners on that assumption. So a
+    candidate touching three or four edges of the image is the frame. A card
+    pushed into a corner touches two; one clipped by the scan edge touches
+    one; neither is excluded.
+
+    This exists because the threshold sweep reaches far below Otsu to find a
+    dark card back on a dark background, and at that depth the texture of a
+    plain backing sheet can cross the threshold and turn the whole scan into
+    one blob. On a real scan against red card it did, and the scan happened
+    to be 4724 x 6586px — an aspect of 0.717, almost exactly a trading card's
+    0.716 — so the whole image scored as the most card-like candidate and was
+    "measured" at 99.9 x 139.4mm. That one frame then misregistered, the
+    photometric solve read the mismatch as damage, and the surface grade fell
+    to 1.
+    """
+    height, width = shape[:2]
+    xs, ys = quad[:, 0], quad[:, 1]
+    touches = (
+        int(xs.min() <= FRAME_TOUCH_PX)
+        + int(ys.min() <= FRAME_TOUCH_PX)
+        + int(xs.max() >= width - 1 - FRAME_TOUCH_PX)
+        + int(ys.max() >= height - 1 - FRAME_TOUCH_PX)
+    )
+    return touches >= 3
+
+
 def find_card_contour(image: np.ndarray) -> np.ndarray | None:
     """Find the card's corner quad against a matte background.
 
@@ -279,6 +314,8 @@ def find_card_contour(image: np.ndarray) -> np.ndarray | None:
                 if area_frac < MIN_CANDIDATE_AREA_FRAC:
                     continue
                 for quad in _quads_from_contour(contour):
+                    if _is_the_frame(quad, image.shape):
+                        continue
                     penalty = _card_likeness_penalty(quad, contour, area_frac)
                     if penalty < best_penalty:
                         best_penalty = penalty

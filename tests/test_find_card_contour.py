@@ -159,3 +159,36 @@ class TestBackgroundThatIsntOneColour:
         img = np.clip(img.astype(np.float32) + gradient, 0, 255).astype(np.uint8)
         assert len(detect._estimate_background_colors(img)) == 1
         assert quad_matches(detect.find_card_contour(img), x0, y0, w, h, tol=20)
+
+
+class TestTheFrameIsNeverTheCard:
+    """At the bottom of the threshold sweep — needed for a dark card back on a
+    dark background — the texture of a plain backing sheet can cross the
+    threshold and turn the whole scan into one blob. On a real scan against red
+    card it did, and the scan's own aspect (4724 x 6586, 0.717) was almost
+    exactly a trading card's, so the whole image won as the most card-like
+    candidate. That frame misregistered and the surface grade fell to 1."""
+
+    @staticmethod
+    def _textured_red(h, w):
+        rng = np.random.default_rng(5)
+        img = np.full((h, w, 3), (77, 75, 211), np.int16)
+        img += rng.integers(-14, 15, (h, w, 3)).astype(np.int16)
+        return np.clip(img, 0, 255).astype(np.uint8)
+
+    def test_a_card_on_a_card_shaped_scan_is_still_the_card(self):
+        h, w = 1680, 1203                      # aspect 0.716: the frame itself looks like a card
+        img = self._textured_red(h, w)
+        y0, x0, ch, cw = 300, 250, 900, 644
+        img[y0:y0 + ch, x0:x0 + cw] = (200, 170, 200)
+        corners = detect.find_card_contour(img)
+        assert corners is not None
+        assert quad_matches(corners, x0, y0, cw, ch, tol=20)
+
+    def test_the_frame_check(self):
+        whole = np.array([[0, 0], [999, 0], [999, 1399], [0, 1399]], np.float32)
+        corner = np.array([[0, 0], [500, 0], [500, 700], [0, 700]], np.float32)
+        inside = np.array([[100, 100], [600, 100], [600, 800], [100, 800]], np.float32)
+        assert detect._is_the_frame(whole, (1400, 1000))
+        assert not detect._is_the_frame(corner, (1400, 1000)), "a card pushed into a corner is still a card"
+        assert not detect._is_the_frame(inside, (1400, 1000))
